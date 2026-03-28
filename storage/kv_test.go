@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -82,4 +83,18 @@ func TestKVSameValue(t *testing.T) {
 	updated, err = kv.Set([]byte("k1"), []byte("v1"))
 	assert.NoError(t, err)
 	assert.False(t, updated)
+}
+
+func TestEntryEncode(t *testing.T) {
+	ent := Entry{key: []byte("k1"), val: []byte("xxx")}
+	data := []byte{2, 0, 0, 0, 3, 0, 0, 0, 'k', '1', 'x', 'x', 'x'}
+
+	// Encode
+	assert.Equal(t, data, ent.Encode())
+
+	// Decode
+	decoded := Entry{}
+	err := decoded.Decode(bytes.NewBuffer(data))
+	assert.Nil(t, err)
+	assert.Equal(t, ent, decoded)
 }
