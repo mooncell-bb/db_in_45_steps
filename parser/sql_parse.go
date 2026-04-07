@@ -18,6 +18,17 @@ func NewParser(s string) Parser {
 	return Parser{buf: s, pos: 0}
 }
 
+type StmtSelect struct {
+	table string
+	cols  []string
+	keys  []NamedCell
+}
+
+type NamedCell struct {
+	column string
+	value  database.Cell
+}
+
 func (p *Parser) skipSpaces() {
 	for p.pos < len(p.buf) && IsSpace(p.buf[p.pos]) {
 		p.pos++
@@ -160,4 +171,74 @@ func (p *Parser) parseString(out *database.Cell) error {
 	}
 
 	return errors.New("string is not terminated")
+}
+
+func (p *Parser) parseEqual(out *NamedCell) error {
+	if name, ok := p.tryName(); !ok {
+		return errors.New("expect column")
+	} else {
+		out.column = name
+	}
+
+	if !p.tryPunctuation("=") {
+		return errors.New("expect =")
+	}
+
+	return p.parseValue(&out.value)
+}
+
+func (p *Parser) parseWhere(out *[]NamedCell) error {
+	if !p.tryKeyword("WHERE") {
+		return errors.New("expect keyword")
+	}
+
+	for !p.tryPunctuation(";") {
+		expr := NamedCell{}
+
+		if len(*out) > 0 && !p.tryKeyword("AND") {
+			return errors.New("expect AND")
+		}
+
+		if err := p.parseEqual(&expr); err != nil {
+			return err
+		}
+
+		*out = append(*out, expr)
+	}
+
+	if len(*out) == 0 {
+		return errors.New("expect where clause")
+	}
+
+	return nil
+}
+
+func (p *Parser) parseSelect(out *StmtSelect) error {
+	if !p.tryKeyword("SELECT") {
+		return errors.New("expect keyword")
+	}
+
+	for !p.tryKeyword("FROM") {
+		if len(out.cols) > 0 && !p.tryPunctuation(",") {
+			return errors.New("expect comma")
+		}
+
+		if name, ok := p.tryName(); ok {
+			out.cols = append(out.cols, name)
+		} else {
+			return errors.New("expect column")
+		}
+	}
+
+	if len(out.cols) == 0 {
+		return errors.New("expect column list")
+	}
+
+	if name, ok := p.tryName(); !ok {
+		return errors.New("expect table name")
+	} else {
+		out.table = name
+	}
+
+	return p.parseWhere(&out.keys)
 }

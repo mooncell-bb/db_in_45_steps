@@ -195,6 +195,67 @@ func TestParseValue(t *testing.T) {
 	testParseValue(t, ` "abc\'\"d" `, database.Cell{Type: database.TypeStr, Str: []byte("abc'\"d")})
 }
 
+func testParseSelect(t *testing.T, s string, ref StmtSelect) {
+	p := NewParser(s)
+	out := StmtSelect{}
+	err := p.parseSelect(&out)
+	assert.Nil(t, err)
+	assert.True(t, p.isEnd())
+	assert.Equal(t, ref, out)
+}
+
+func TestParseSelect(t *testing.T) {
+	s := "select a from t where c=1;"
+	stmt := StmtSelect{
+		table: "t",
+		cols:  []string{"a"},
+		keys:  []NamedCell{{column: "c", value: database.Cell{Type: database.TypeI64, I64: 1}}},
+	}
+	testParseSelect(t, s, stmt)
+
+	s = "select a,b_02 from T where c=1 and d='e';"
+	stmt = StmtSelect{
+		table: "T",
+		cols:  []string{"a", "b_02"},
+		keys: []NamedCell{
+			{column: "c", value: database.Cell{Type: database.TypeI64, I64: 1}},
+			{column: "d", value: database.Cell{Type: database.TypeStr, Str: []byte("e")}},
+		},
+	}
+	testParseSelect(t, s, stmt)
+
+	s = "select a, b_02 from T where c = 1 and d = 'e' ; "
+	testParseSelect(t, s, stmt)
+
+	s = `SELECT x, y FROM users WHERE age = 42 AND name = "bob";`
+	stmt = StmtSelect{
+		table: "users",
+		cols:  []string{"x", "y"},
+		keys: []NamedCell{
+			{column: "age", value: database.Cell{Type: database.TypeI64, I64: 42}},
+			{column: "name", value: database.Cell{Type: database.TypeStr, Str: []byte("bob")}},
+		},
+	}
+	testParseSelect(t, s, stmt)
+}
+
+func testParseSelectError(t *testing.T, s string) {
+	p := NewParser(s)
+	out := StmtSelect{}
+	err := p.parseSelect(&out)
+	assert.NotNil(t, err)
+}
+
+func TestParseSelectFailures(t *testing.T) {
+	testParseSelectError(t, "a from t where c=1;")
+	testParseSelectError(t, "select from t where c=1;")
+	testParseSelectError(t, "select a t where c=1;")
+	testParseSelectError(t, "select a from where c=1;")
+	testParseSelectError(t, "select a from t;")
+	testParseSelectError(t, "select a from t where c=1")
+	testParseSelectError(t, "select a from t where c=1 d=2;")
+}
+
 func TestParserCombined(t *testing.T) {
 	// Test a more complex SQL-like statement
 	p := NewParser("CREATE TABLE users ( id INT , name VARCHAR(50) )")
