@@ -19,6 +19,11 @@ type Cell struct {
 	Str  []byte
 }
 
+type NamedCell struct {
+	Column string
+	Value  Cell
+}
+
 func (cell *Cell) Encode(toAppend []byte) []byte {
 	switch cell.Type {
 	case TypeI64:

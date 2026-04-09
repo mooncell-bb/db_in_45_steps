@@ -21,12 +21,7 @@ func NewParser(s string) Parser {
 type StmtSelect struct {
 	table string
 	cols  []string
-	keys  []NamedCell
-}
-
-type NamedCell struct {
-	column string
-	value  database.Cell
+	keys  []database.NamedCell
 }
 
 type StmtCreatTable struct {
@@ -42,13 +37,45 @@ type StmtInsert struct {
 
 type StmtUpdate struct {
 	table string
-	keys  []NamedCell
-	value []NamedCell
+	keys  []database.NamedCell
+	value []database.NamedCell
 }
 
 type StmtDelete struct {
 	table string
-	keys  []NamedCell
+	keys  []database.NamedCell
+}
+
+func (p *Parser) ParseStmt() (out any, err error) {
+	if p.tryKeyword("SELECT") {
+		stmt := &StmtSelect{}
+		err = p.parseSelect(stmt)
+		out = stmt
+	} else if p.tryKeyword("CREATE", "TABLE") {
+		stmt := &StmtCreatTable{}
+		err = p.parseCreateTable(stmt)
+		out = stmt
+	} else if p.tryKeyword("INSERT", "INTO") {
+		stmt := &StmtInsert{}
+		err = p.parseInsert(stmt)
+		out = stmt
+	} else if p.tryKeyword("UPDATE") {
+		stmt := &StmtUpdate{}
+		err = p.parseUpdate(stmt)
+		out = stmt
+	} else if p.tryKeyword("DELETE", "FROM") {
+		stmt := &StmtDelete{}
+		err = p.parseDelete(stmt)
+		out = stmt
+	} else {
+		err = errors.New("unknown statement")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 func (p *Parser) skipSpaces() {
@@ -196,27 +223,27 @@ func (p *Parser) parseString(out *database.Cell) error {
 	return errors.New("string is not terminated")
 }
 
-func (p *Parser) parseEqual(out *NamedCell) error {
+func (p *Parser) parseEqual(out *database.NamedCell) error {
 	if name, ok := p.tryName(); !ok {
 		return errors.New("expect column")
 	} else {
-		out.column = name
+		out.Column = name
 	}
 
 	if !p.tryPunctuation("=") {
 		return errors.New("expect =")
 	}
 
-	return p.parseValue(&out.value)
+	return p.parseValue(&out.Value)
 }
 
-func (p *Parser) parseWhere(out *[]NamedCell) error {
+func (p *Parser) parseWhere(out *[]database.NamedCell) error {
 	if !p.tryKeyword("WHERE") {
 		return errors.New("expect keyword")
 	}
 
 	for !p.tryPunctuation(";") {
-		expr := NamedCell{}
+		expr := database.NamedCell{}
 
 		if len(*out) > 0 && !p.tryKeyword("AND") {
 			return errors.New("expect AND")
@@ -262,38 +289,6 @@ func (p *Parser) parseSelect(out *StmtSelect) error {
 	return p.parseWhere(&out.keys)
 }
 
-func (p *Parser) parseStmt() (out any, err error) {
-	if p.tryKeyword("SELECT") {
-		stmt := &StmtSelect{}
-		err = p.parseSelect(stmt)
-		out = stmt
-	} else if p.tryKeyword("CREATE", "TABLE") {
-		stmt := &StmtCreatTable{}
-		err = p.parseCreateTable(stmt)
-		out = stmt
-	} else if p.tryKeyword("INSERT", "INTO") {
-		stmt := &StmtInsert{}
-		err = p.parseInsert(stmt)
-		out = stmt
-	} else if p.tryKeyword("UPDATE") {
-		stmt := &StmtUpdate{}
-		err = p.parseUpdate(stmt)
-		out = stmt
-	} else if p.tryKeyword("DELETE", "FROM") {
-		stmt := &StmtDelete{}
-		err = p.parseDelete(stmt)
-		out = stmt
-	} else {
-		err = errors.New("unknown statement")
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return out, nil
-}
-
 func (p *Parser) parseDelete(out *StmtDelete) error {
 	if name, ok := p.tryName(); !ok {
 		return errors.New("expect table name")
@@ -316,7 +311,7 @@ func (p *Parser) parseUpdate(out *StmtUpdate) error {
 	}
 
 	for !p.tryKeyword("WHERE") {
-		expr := NamedCell{}
+		expr := database.NamedCell{}
 
 		if len(out.value) > 0 && !p.tryKeyword(",") {
 			return errors.New("expect ,")

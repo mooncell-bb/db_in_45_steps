@@ -1,0 +1,170 @@
+package parser
+
+import (
+	"encoding/json"
+	"errors"
+
+	"github.com/mooncell-bb/db_in_45_steps/database"
+)
+
+type Exec struct {
+	DB *database.DB
+}
+
+type SQLResult struct {
+	Updated int
+	Header  []string
+	Values  []database.Row
+}
+
+func (exec *Exec) Open() error {
+	return exec.DB.Open()
+}
+
+func (exec *Exec) Close() error {
+	return exec.DB.KV.Close()
+}
+
+func (exec *Exec) ExecStmt(stmt any) (r SQLResult, err error) {
+	switch ptr := stmt.(type) {
+	case *StmtCreatTable:
+		err = exec.execCreateTable(ptr)
+	case *StmtSelect:
+		r.Header = ptr.cols
+		r.Values, err = exec.execSelect(ptr)
+	case *StmtInsert:
+		r.Updated, err = exec.execInsert(ptr)
+	case *StmtUpdate:
+		r.Updated, err = exec.execUpdate(ptr)
+	case *StmtDelete:
+		r.Updated, err = exec.execDelete(ptr)
+	default:
+		panic("unreachable")
+	}
+	return
+}
+
+func (exec *Exec) execCreateTable(stmt *StmtCreatTable) (err error) {
+	if _, err := exec.DB.GetSchema(stmt.table); err == nil {
+		return errors.New("duplicate table name")
+	}
+
+	schema := database.Schema{
+		Table: stmt.table,
+		Cols:  stmt.cols,
+	}
+
+	if schema.PKey, err = database.LookupColumns(stmt.cols, stmt.pkey); err != nil {
+		return err
+	}
+
+	val, err := json.Marshal(schema)
+	if _, err = exec.DB.KV.Set([]byte("@schema_"+stmt.table), val); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (exec *Exec) execInsert(stmt *StmtInsert) (count int, err error) {
+	schema, err := exec.DB.GetSchema(stmt.table)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(schema.Cols) != len(stmt.value) {
+		return 0, errors.New("schema mismatch")
+	}
+
+	for i := range schema.Cols {
+		if schema.Cols[i].Type != stmt.value[i].Type {
+			return 0, errors.New("schema mismatch")
+		}
+	}
+
+	updated, err := exec.DB.Insert(&schema, stmt.value)
+	if err != nil {
+		return 0, err
+	}
+	if updated {
+		count++
+	}
+
+	return count, nil
+}
+
+func (exec *Exec) execDelete(stmt *StmtDelete) (count int, err error) {
+	schema, err := exec.DB.GetSchema(stmt.table)
+	if err != nil {
+		return 0, err
+	}
+
+	row, err := database.MakePKey(&schema, stmt.keys)
+	if err != nil {
+		return 0, err
+	}
+
+	updated, err := exec.DB.Delete(&schema, row)
+	if err != nil {
+		return 0, err
+	}
+	if updated {
+		count++
+	}
+
+	return count, nil
+}
+
+func (exec *Exec) execUpdate(stmt *StmtUpdate) (count int, err error) {
+	schema, err := exec.DB.GetSchema(stmt.table)
+	if err != nil {
+		return 0, err
+	}
+
+	row, err := database.MakePKey(&schema, stmt.keys)
+	if err != nil {
+		return 0, err
+	}
+
+	if ok, err := exec.DB.Select(&schema, row); err != nil || !ok {
+		return 0, err
+	}
+
+	if err = database.FillNonPKey(&schema, stmt.value, row); err != nil {
+		return 0, err
+	}
+
+	updated, err := exec.DB.Update(&schema, row)
+	if err != nil {
+		return 0, err
+	}
+	if updated {
+		count++
+	}
+
+	return count, nil
+}
+
+func (exec *Exec) execSelect(stmt *StmtSelect) ([]database.Row, error) {
+	schema, err := exec.DB.GetSchema(stmt.table)
+	if err != nil {
+		return nil, err
+	}
+
+	indices, err := database.LookupColumns(schema.Cols, stmt.cols)
+	if err != nil {
+		return nil, err
+	}
+
+	row, err := database.MakePKey(&schema, stmt.keys)
+	if err != nil {
+		return nil, err
+	}
+
+	if ok, err := exec.DB.Select(&schema, row); err != nil || !ok {
+		return nil, err
+	}
+
+	row = database.SubsetRow(row, indices)
+	return []database.Row{row}, nil
+}

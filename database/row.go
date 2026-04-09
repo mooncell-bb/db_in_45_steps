@@ -30,11 +30,11 @@ func (row Row) EncodeKey(schema *Schema) (key []byte) {
 	key = append([]byte(schema.Table), 0x00)
 
 	for idx, cell := range row {
-		if cell.Type != schema.Cols[idx].Type {
-			panic("cell type mismatch")
-		}
-
 		if slices.Contains(schema.PKey, idx) {
+			if cell.Type != schema.Cols[idx].Type {
+				panic("cell type mismatch")
+			}
+
 			key = cell.Encode(key)
 		}
 	}

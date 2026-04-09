@@ -9,7 +9,9 @@ import (
 
 func TestTableByPKey(t *testing.T) {
 	db := DB{}
-	err := db.KV.Init(".test_db")
+	db.KV.Log.FileName = ".test_db"
+
+	err := db.Open()
 	defer os.Remove(".test_db")
 
 	os.Remove(".test_db")
@@ -63,7 +65,9 @@ func TestTableByPKey(t *testing.T) {
 
 func TestTableUpsert(t *testing.T) {
 	db := DB{}
-	err := db.KV.Init(".test_db_upsert")
+	db.KV.Log.FileName = ".test_db_upsert"
+
+	err := db.Open()
 	defer os.Remove(".test_db_upsert")
 
 	os.Remove(".test_db_upsert")
@@ -111,7 +115,9 @@ func TestTableUpsert(t *testing.T) {
 
 func TestTableUpdateMode(t *testing.T) {
 	db := DB{}
-	err := db.KV.Init(".test_db_update_mode")
+	db.KV.Log.FileName = ".test_db_update_mode"
+
+	err := db.Open()
 	defer os.Remove(".test_db_update_mode")
 
 	os.Remove(".test_db_update_mode")
