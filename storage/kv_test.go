@@ -11,8 +11,9 @@ import (
 func TestKVBasic(t *testing.T) {
 	kv := KV{}
 	kv.Log.FileName = ".test_kv_basic_db"
-	defer os.Remove(kv.Log.FileName)
-	_ = os.Remove(kv.Log.FileName)
+
+	defer os.Remove(".test_kv_basic_db")
+	os.Remove(".test_kv_basic_db")
 
 	// Open
 	err := kv.Open()
