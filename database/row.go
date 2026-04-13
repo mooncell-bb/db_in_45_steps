@@ -59,17 +59,25 @@ func (row Row) EncodeVal(schema *Schema) (val []byte) {
 	return val
 }
 
+var ErrOutOfRange = errors.New("out of range")
+
 func (row Row) DecodeKey(schema *Schema, key []byte) (err error) {
-	if len(row) != len(schema.Cols) {
-		panic("mismatch between row data and schema")
-	}
-
 	if len(key) < len(schema.Table)+1 {
-		return errors.New("bad key")
+		return ErrOutOfRange
 	}
 
-	if string(key[:len(schema.Table)+1]) != schema.Table+"\x00" {
-		return errors.New("bad key")
+	index := slices.Index(key, 0x00)
+	if index == -1 {
+		return errors.New("cannot find table info")
+	}
+
+	table := string(key[:index])
+	if table != schema.Table {
+		return ErrOutOfRange
+	}
+
+	if len(row) != len(schema.Cols) {
+		panic("decode key failure")
 	}
 
 	key = key[len(schema.Table)+1:]

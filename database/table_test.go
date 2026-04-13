@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTableByPKey(t *testing.T) {
@@ -160,4 +161,215 @@ func TestTableUpdateMode(t *testing.T) {
 	// Upsert same unchanged value should return updated=false
 	updated, err = db.Upsert(schema, row)
 	assert.True(t, !updated && err == nil)
+}
+
+func TestIterByPKey(t *testing.T) {
+	db := DB{}
+	db.KV.Log.FileName = ".test_db_iter"
+	defer os.Remove(db.KV.Log.FileName)
+
+	os.Remove(db.KV.Log.FileName)
+	err := db.Open()
+	assert.Nil(t, err)
+	defer db.Close()
+
+	schema := &Schema{
+		Table: "t",
+		Cols: []Column{
+			{Name: "k", Type: TypeI64},
+			{Name: "v", Type: TypeI64},
+		},
+		PKey: []int{0},
+	}
+
+	N := int64(10)
+	for i := int64(0); i < N; i += 2 {
+		row := Row{
+			Cell{Type: TypeI64, I64: i},
+			Cell{Type: TypeI64, I64: i},
+		}
+		updated, err := db.Insert(schema, row)
+		require.True(t, updated && err == nil)
+	}
+
+	// Test iterator with various seek positions
+	for i := int64(-1); i < N+1; i++ {
+		row := Row{
+			Cell{Type: TypeI64, I64: i},
+			Cell{},
+		}
+
+		out := []int64{}
+		iter, err := db.Seek(schema, row)
+		require.Nil(t, err)
+
+		for iter.Valid() {
+			out = append(out, iter.Row()[1].I64)
+			err = iter.Next()
+			require.Nil(t, err)
+		}
+
+		expected := []int64{}
+		for j := i; j < N; j++ {
+			if j >= 0 && j%2 == 0 {
+				expected = append(expected, j)
+			}
+		}
+		assert.Equal(t, expected, out)
+	}
+}
+
+func TestIteratorValid(t *testing.T) {
+	db := DB{}
+	db.KV.Log.FileName = ".test_db_valid"
+	defer os.Remove(db.KV.Log.FileName)
+
+	os.Remove(db.KV.Log.FileName)
+	err := db.Open()
+	assert.Nil(t, err)
+	defer db.Close()
+
+	schema := &Schema{
+		Table: "t",
+		Cols: []Column{
+			{Name: "id", Type: TypeI64},
+			{Name: "val", Type: TypeStr},
+		},
+		PKey: []int{0},
+	}
+
+	// Insert some test data
+	rows := []Row{
+		{Cell{Type: TypeI64, I64: 1}, Cell{Type: TypeStr, Str: []byte("one")}},
+		{Cell{Type: TypeI64, I64: 3}, Cell{Type: TypeStr, Str: []byte("three")}},
+		{Cell{Type: TypeI64, I64: 5}, Cell{Type: TypeStr, Str: []byte("five")}},
+	}
+
+	for _, row := range rows {
+		updated, err := db.Insert(schema, row)
+		require.True(t, updated && err == nil)
+	}
+
+	// Test Valid() returns true for valid iterator
+	seekRow := Row{
+		Cell{Type: TypeI64, I64: 1},
+		Cell{},
+	}
+	iter, err := db.Seek(schema, seekRow)
+	require.Nil(t, err)
+	assert.True(t, iter.Valid())
+
+	// Advance to next and verify still valid
+	err = iter.Next()
+	require.Nil(t, err)
+	assert.True(t, iter.Valid())
+
+	// Advance to next and verify still valid
+	err = iter.Next()
+	require.Nil(t, err)
+	assert.True(t, iter.Valid())
+
+	// Advance past end and verify not valid
+	err = iter.Next()
+	require.Nil(t, err)
+	assert.False(t, iter.Valid())
+}
+
+func TestIteratorRow(t *testing.T) {
+	db := DB{}
+	db.KV.Log.FileName = ".test_db_row"
+	defer os.Remove(db.KV.Log.FileName)
+
+	os.Remove(db.KV.Log.FileName)
+	err := db.Open()
+	assert.Nil(t, err)
+	defer db.Close()
+
+	schema := &Schema{
+		Table: "t",
+		Cols: []Column{
+			{Name: "id", Type: TypeI64},
+			{Name: "name", Type: TypeStr},
+			{Name: "age", Type: TypeI64},
+		},
+		PKey: []int{0},
+	}
+
+	testData := []Row{
+		{Cell{Type: TypeI64, I64: 100}, Cell{Type: TypeStr, Str: []byte("Alice")}, Cell{Type: TypeI64, I64: 25}},
+		{Cell{Type: TypeI64, I64: 101}, Cell{Type: TypeStr, Str: []byte("Bob")}, Cell{Type: TypeI64, I64: 30}},
+		{Cell{Type: TypeI64, I64: 102}, Cell{Type: TypeStr, Str: []byte("Charlie")}, Cell{Type: TypeI64, I64: 35}},
+	}
+
+	for _, row := range testData {
+		updated, err := db.Insert(schema, row)
+		require.True(t, updated && err == nil)
+	}
+
+	// Seek from the first row and verify Row() returns correct data
+	seekRow := Row{
+		Cell{Type: TypeI64, I64: 100},
+		Cell{},
+		Cell{},
+	}
+	iter, err := db.Seek(schema, seekRow)
+	require.Nil(t, err)
+
+	// Collect all rows via iterator
+	collectedRows := []Row{}
+	for iter.Valid() {
+		collectedRows = append(collectedRows, append(Row{}, iter.Row()...))
+		err = iter.Next()
+		require.Nil(t, err)
+	}
+
+	assert.Equal(t, testData, collectedRows)
+}
+
+func TestIteratorNext(t *testing.T) {
+	db := DB{}
+	db.KV.Log.FileName = ".test_db_next"
+	defer os.Remove(db.KV.Log.FileName)
+
+	os.Remove(db.KV.Log.FileName)
+	err := db.Open()
+	assert.Nil(t, err)
+	defer db.Close()
+
+	schema := &Schema{
+		Table: "t",
+		Cols: []Column{
+			{Name: "id", Type: TypeI64},
+			{Name: "val", Type: TypeI64},
+		},
+		PKey: []int{0},
+	}
+
+	// Insert test data: 0, 10, 20, 30, 40
+	for i := int64(0); i < 5; i++ {
+		row := Row{
+			Cell{Type: TypeI64, I64: i * 10},
+			Cell{Type: TypeI64, I64: i * 100},
+		}
+		updated, err := db.Insert(schema, row)
+		require.True(t, updated && err == nil)
+	}
+
+	seekRow := Row{
+		Cell{Type: TypeI64, I64: 0},
+		Cell{},
+	}
+	iter, err := db.Seek(schema, seekRow)
+	require.Nil(t, err)
+
+	// Collect sequence of values using Next()
+	values := []int64{}
+	for iter.Valid() {
+		values = append(values, iter.Row()[0].I64)
+		err = iter.Next()
+		require.Nil(t, err)
+	}
+
+	expected := []int64{0, 10, 20, 30, 40}
+	assert.Equal(t, expected, values)
 }

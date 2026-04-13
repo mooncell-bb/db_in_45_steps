@@ -87,3 +87,59 @@ func (db *DB) GetSchema(table string) (Schema, error) {
 
 	return schema, nil
 }
+
+type RowIterator struct {
+	schema *Schema
+	iter   *storage.KVIterator
+	valid  bool
+	row    Row
+}
+
+func (db *DB) Seek(schema *Schema, row Row) (*RowIterator, error) {
+	iter, err := db.KV.Seek(row.EncodeKey(schema))
+	if err != nil {
+		return nil, err
+	}
+
+	valid, err := decodeKVIter(schema, iter, row)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RowIterator{schema, iter, valid, row}, nil
+}
+
+func (iter *RowIterator) Next() (err error) {
+	if err = iter.iter.Next(); err != nil {
+		return err
+	}
+
+	iter.valid, err = decodeKVIter(iter.schema, iter.iter, iter.row)
+	return err
+}
+
+func (iter *RowIterator) Valid() bool {
+	return iter.valid
+}
+
+func (iter *RowIterator) Row() Row {
+	return iter.row
+}
+
+func decodeKVIter(schema *Schema, iter *storage.KVIterator, row Row) (bool, error) {
+	if !iter.Valid() {
+		return false, nil
+	}
+
+	if err := row.DecodeKey(schema, iter.Key()); err == ErrOutOfRange {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+
+	if err := row.DecodeVal(schema, iter.Val()); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
