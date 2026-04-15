@@ -5,6 +5,7 @@ import (
 
 	"github.com/mooncell-bb/db_in_45_steps/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseName(t *testing.T) {
@@ -356,4 +357,30 @@ func TestParseStmt(t *testing.T) {
 		keys:  []database.NamedCell{{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 3}}, {Column: "d", Value: database.Cell{Type: database.TypeI64, I64: 4}}},
 	}
 	testParseStmt(t, s, stmt)
+}
+
+func testParseExpr(t *testing.T, s string, expr any) {
+	p := NewParser(s)
+	out, err := p.parseAdd()
+	require.Nil(t, err)
+	assert.Equal(t, expr, out)
+	assert.True(t, p.isEnd())
+}
+
+func TestParseExpr(t *testing.T) {
+	var expr any
+
+	testParseExpr(t, "a", "a")
+	testParseExpr(t, "1", &database.Cell{Type: database.TypeI64, I64: 1})
+
+	s := "a + 1"
+	expr = &ExprBinOp{op: database.OP_ADD, left: "a", right: &database.Cell{Type: database.TypeI64, I64: 1}}
+	testParseExpr(t, s, expr)
+
+	s = "a + 1 - b"
+	expr = &ExprBinOp{op: database.OP_SUB,
+		left:  &ExprBinOp{op: database.OP_ADD, left: "a", right: &database.Cell{Type: database.TypeI64, I64: 1}},
+		right: "b",
+	}
+	testParseExpr(t, s, expr)
 }

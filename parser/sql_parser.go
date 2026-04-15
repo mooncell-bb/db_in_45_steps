@@ -46,6 +46,12 @@ type StmtDelete struct {
 	keys  []database.NamedCell
 }
 
+type ExprBinOp struct {
+	op    database.ExprOp
+	left  any
+	right any
+}
+
 func (p *Parser) ParseStmt() (out any, err error) {
 	if p.tryKeyword("SELECT") {
 		stmt := &StmtSelect{}
@@ -457,4 +463,52 @@ func (p *Parser) parseCreateTable(out *StmtCreatTable) error {
 	}
 
 	return nil
+}
+
+func (p *Parser) parseAtom() (any, error) {
+	if name, ok := p.tryName(); ok {
+		return name, nil
+	}
+
+	cell := &database.Cell{}
+	if err := p.parseValue(cell); err != nil {
+		return nil, err
+	}
+
+	return cell, nil
+}
+
+func (p *Parser) parseAdd() (any, error) {
+	left, err := p.parseAtom()
+	if err != nil {
+		return nil, err
+	}
+
+	tokens := []string{"+", "-"}
+	ops := []database.ExprOp{database.OP_ADD, database.OP_SUB}
+
+	for ok := true; ok; {
+		ok = false
+		for idx, token := range tokens {
+			if !p.tryPunctuation(token) {
+				continue
+			}
+
+			ok = true
+			right, err := p.parseAtom()
+			if err != nil {
+				return nil, err
+			}
+
+			left = &ExprBinOp{
+				op:    ops[idx],
+				left:  left,
+				right: right,
+			}
+
+			break
+		}
+	}
+
+	return left, nil
 }
