@@ -52,6 +52,11 @@ type ExprBinOp struct {
 	right any
 }
 
+type ExprUnOp struct {
+	op  database.ExprOp
+	kid any
+}
+
 func (p *Parser) ParseStmt() (out any, err error) {
 	if p.tryKeyword("SELECT") {
 		stmt := &StmtSelect{}
@@ -490,24 +495,25 @@ func (p *Parser) parseAtom() (expr any, err error) {
 	return cell, nil
 }
 
-func (p *Parser) parseAdd() (any, error) {
-	left, err := p.parseMul()
+func (p *Parser) parseBinop(tokens []string, ops []database.ExprOp, inner func() (any, error)) (any, error) {
+	if len(tokens) != len(ops) {
+		panic("params mismatch")
+	}
+
+	left, err := inner()
 	if err != nil {
 		return nil, err
 	}
 
-	tokens := []string{"+", "-"}
-	ops := []database.ExprOp{database.OP_ADD, database.OP_SUB}
-
 	for ok := true; ok; {
 		ok = false
 		for idx, token := range tokens {
-			if !p.tryPunctuation(token) {
+			if !p.tryPunctuation(token) && !p.tryKeyword(token) {
 				continue
 			}
 
 			ok = true
-			right, err := p.parseMul()
+			right, err := inner()
 			if err != nil {
 				return nil, err
 			}
@@ -523,43 +529,74 @@ func (p *Parser) parseAdd() (any, error) {
 	}
 
 	return left, nil
+}
+
+func (p *Parser) parseNeg() (expr any, err error) {
+	if p.tryPunctuation("-") {
+		if expr, err = p.parseNeg(); err != nil {
+			return nil, err
+		}
+		return &ExprUnOp{
+			op:  database.OP_NEG,
+			kid: expr,
+		}, nil
+	} else {
+		return p.parseAtom()
+	}
 }
 
 func (p *Parser) parseMul() (any, error) {
-	left, err := p.parseAtom()
-	if err != nil {
-		return nil, err
-	}
-
 	tokens := []string{"*", "/"}
 	ops := []database.ExprOp{database.OP_MUL, database.OP_DIV}
+	return p.parseBinop(tokens, ops, p.parseNeg)
+}
 
-	for ok := true; ok; {
-		ok = false
-		for idx, token := range tokens {
-			if !p.tryPunctuation(token) {
-				continue
-			}
+func (p *Parser) parseAdd() (any, error) {
+	tokens := []string{"+", "-"}
+	ops := []database.ExprOp{database.OP_ADD, database.OP_SUB}
+	return p.parseBinop(tokens, ops, p.parseMul)
+}
 
-			ok = true
-			right, err := p.parseAtom()
-			if err != nil {
-				return nil, err
-			}
-
-			left = &ExprBinOp{
-				op:    ops[idx],
-				left:  left,
-				right: right,
-			}
-
-			break
-		}
+func (p *Parser) parseCmp() (any, error) {
+	tokens := []string{"=", "!=", "<>", "<=", ">=", "<", ">"}
+	ops := []database.ExprOp{
+		database.OP_EQ,
+		database.OP_NE,
+		database.OP_NE,
+		database.OP_LE,
+		database.OP_GE,
+		database.OP_LT,
+		database.OP_GT,
 	}
+	return p.parseBinop(tokens, ops, p.parseAdd)
+}
 
-	return left, nil
+func (p *Parser) parseNot() (expr any, err error) {
+	if p.tryKeyword("NOT") {
+		if expr, err = p.parseNot(); err != nil {
+			return nil, err
+		}
+		return &ExprUnOp{
+			op:  database.OP_NOT,
+			kid: expr,
+		}, nil
+	} else {
+		return p.parseCmp()
+	}
+}
+
+func (p *Parser) parseAnd() (any, error) {
+	tokens := []string{"AND"}
+	ops := []database.ExprOp{database.OP_AND}
+	return p.parseBinop(tokens, ops, p.parseNot)
+}
+
+func (p *Parser) parseOr() (any, error) {
+	tokens := []string{"OR"}
+	ops := []database.ExprOp{database.OP_OR}
+	return p.parseBinop(tokens, ops, p.parseAnd)
 }
 
 func (p *Parser) ParseExpr() (any, error) {
-	return p.parseAdd()
+	return p.parseOr()
 }

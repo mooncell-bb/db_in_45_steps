@@ -10,7 +10,7 @@ import (
 
 func testEval(t *testing.T, schema *database.Schema, row database.Row, s string, expected database.Cell) {
 	p := NewParser(s)
-	expr, err := p.parseAdd()
+	expr, err := p.ParseExpr()
 	require.Nil(t, err)
 	require.True(t, p.isEnd())
 
@@ -19,7 +19,7 @@ func testEval(t *testing.T, schema *database.Schema, row database.Row, s string,
 	assert.Equal(t, expected, *out)
 }
 
-func makeCell(v interface{}) database.Cell {
+func makeCell(v any) database.Cell {
 	switch val := v.(type) {
 	case int:
 		return database.Cell{Type: database.TypeI64, I64: int64(val)}
@@ -30,7 +30,7 @@ func makeCell(v interface{}) database.Cell {
 	}
 }
 
-func makeRow(vs ...interface{}) (row database.Row) {
+func makeRow(vs ...any) (row database.Row) {
 	for _, v := range vs {
 		row = append(row, makeCell(v))
 	}
@@ -52,4 +52,6 @@ func TestEval(t *testing.T) {
 	row := makeRow("A", "B", 3, 4)
 	testEval(t, schema, row, "a + b", makeCell("AB"))
 	testEval(t, schema, row, "c - d", makeCell(-1))
+	testEval(t, schema, row, "c * d - d * c + d", makeCell(4))
+	testEval(t, schema, row, "d or c and not d = c", makeCell(1))
 }

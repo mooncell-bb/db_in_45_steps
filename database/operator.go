@@ -7,10 +7,16 @@ const (
 	OP_SUB ExprOp = 2  // -
 	OP_MUL ExprOp = 3  // *
 	OP_DIV ExprOp = 4  // /
+	OP_EQ  ExprOp = 10 // =
+	OP_NE  ExprOp = 11 // !=
 	OP_LE  ExprOp = 12 // <=
 	OP_GE  ExprOp = 13 // >=
 	OP_LT  ExprOp = 14 // <
 	OP_GT  ExprOp = 15 // >
+	OP_AND ExprOp = 20 // AND
+	OP_OR  ExprOp = 21 // OR
+	OP_NOT ExprOp = 30 // not
+	OP_NEG ExprOp = 31 // -
 )
 
 type RangeReq struct {
