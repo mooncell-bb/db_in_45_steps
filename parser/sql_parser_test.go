@@ -214,7 +214,7 @@ func TestParseSelect(t *testing.T) {
 	s := "select a from t where c=1;"
 	stmt := StmtSelect{
 		table: "t",
-		cols:  []string{"a"},
+		cols:  []any{"a"},
 		keys:  []database.NamedCell{{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 1}}},
 	}
 	testParseSelect(t, s, stmt)
@@ -222,7 +222,7 @@ func TestParseSelect(t *testing.T) {
 	s = "select a,b_02 from T where c=1 and d='e';"
 	stmt = StmtSelect{
 		table: "T",
-		cols:  []string{"a", "b_02"},
+		cols:  []any{"a", "b_02"},
 		keys: []database.NamedCell{
 			{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 1}},
 			{Column: "d", Value: database.Cell{Type: database.TypeStr, Str: []byte("e")}},
@@ -236,7 +236,7 @@ func TestParseSelect(t *testing.T) {
 	s = `SELECT x, y FROM users WHERE age = 42 AND name = "bob";`
 	stmt = StmtSelect{
 		table: "users",
-		cols:  []string{"x", "y"},
+		cols:  []any{"x", "y"},
 		keys: []database.NamedCell{
 			{Column: "age", Value: database.Cell{Type: database.TypeI64, I64: 42}},
 			{Column: "name", Value: database.Cell{Type: database.TypeStr, Str: []byte("bob")}},
@@ -309,7 +309,7 @@ func TestParseStmt(t *testing.T) {
 	s := "select a from t where c=1;"
 	stmt = &StmtSelect{
 		table: "t",
-		cols:  []string{"a"},
+		cols:  []any{"a"},
 		keys:  []database.NamedCell{{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 1}}},
 	}
 	testParseStmt(t, s, stmt)
@@ -317,7 +317,7 @@ func TestParseStmt(t *testing.T) {
 	s = "select a,b_02 from T where c=1 and d='e';"
 	stmt = &StmtSelect{
 		table: "T",
-		cols:  []string{"a", "b_02"},
+		cols:  []any{"a", "b_02"},
 		keys: []database.NamedCell{
 			{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 1}},
 			{Column: "d", Value: database.Cell{Type: database.TypeStr, Str: []byte("e")}},
@@ -346,7 +346,7 @@ func TestParseStmt(t *testing.T) {
 	s = "update t set a = 1, b = 2 where c = 3 and d = 4;"
 	stmt = &StmtUpdate{
 		table: "t",
-		value: []database.NamedCell{{Column: "a", Value: database.Cell{Type: database.TypeI64, I64: 1}}, {Column: "b", Value: database.Cell{Type: database.TypeI64, I64: 2}}},
+		value: []ExprAssign{{column: "a", expr: &database.Cell{Type: database.TypeI64, I64: 1}}, {column: "b", expr: &database.Cell{Type: database.TypeI64, I64: 2}}},
 		keys:  []database.NamedCell{{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 3}}, {Column: "d", Value: database.Cell{Type: database.TypeI64, I64: 4}}},
 	}
 	testParseStmt(t, s, stmt)

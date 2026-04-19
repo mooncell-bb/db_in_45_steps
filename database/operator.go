@@ -47,3 +47,38 @@ func SuffixPositive(op ExprOp) bool {
 		panic("unreachable")
 	}
 }
+
+func ExpropToStr(op ExprOp) string {
+	switch op {
+	case OP_ADD:
+		return "+"
+	case OP_SUB:
+		return "-"
+	case OP_MUL:
+		return "*"
+	case OP_DIV:
+		return "/"
+	case OP_EQ:
+		return "="
+	case OP_NE:
+		return "!="
+	case OP_LE:
+		return "<="
+	case OP_GE:
+		return ">="
+	case OP_LT:
+		return "<"
+	case OP_GT:
+		return ">"
+	case OP_AND:
+		return "AND"
+	case OP_OR:
+		return "OR"
+	case OP_NOT:
+		return "NOT"
+	case OP_NEG:
+		return "-"
+	default:
+		panic("unreachable")
+	}
+}

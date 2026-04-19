@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"slices"
+	"strconv"
 )
 
 type CellType uint8
@@ -132,5 +133,16 @@ func (cell *Cell) DecodeKey(data []byte) (rest []byte, err error) {
 		return rest, err
 	default:
 		panic("invalid cell type")
+	}
+}
+
+func CellToStr(cell *Cell) string {
+	switch cell.Type {
+	case TypeI64:
+		return strconv.FormatInt(cell.I64, 10)
+	case TypeStr:
+		return string(cell.Str)
+	default:
+		panic("unreachable")
 	}
 }

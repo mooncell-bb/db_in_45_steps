@@ -20,7 +20,7 @@ func NewParser(s string) Parser {
 
 type StmtSelect struct {
 	table string
-	cols  []string
+	cols  []any
 	keys  []database.NamedCell
 }
 
@@ -38,12 +38,17 @@ type StmtInsert struct {
 type StmtUpdate struct {
 	table string
 	keys  []database.NamedCell
-	value []database.NamedCell
+	value []ExprAssign
 }
 
 type StmtDelete struct {
 	table string
 	keys  []database.NamedCell
+}
+
+type ExprAssign struct {
+	column string
+	expr   any
 }
 
 type ExprBinOp struct {
@@ -248,6 +253,21 @@ func (p *Parser) parseEqual(out *database.NamedCell) error {
 	return p.parseValue(&out.Value)
 }
 
+func (p *Parser) parseAssign(out *ExprAssign) (err error) {
+	var ok bool
+	out.column, ok = p.tryName()
+	if !ok {
+		return errors.New("expect column")
+	}
+
+	if !p.tryPunctuation("=") {
+		return errors.New("expect =")
+	}
+
+	out.expr, err = p.ParseExpr()
+	return err
+}
+
 func (p *Parser) parseWhere(out *[]database.NamedCell) error {
 	if !p.tryKeyword("WHERE") {
 		return errors.New("expect keyword")
@@ -280,11 +300,12 @@ func (p *Parser) parseSelect(out *StmtSelect) error {
 			return errors.New("expect comma")
 		}
 
-		if name, ok := p.tryName(); ok {
-			out.cols = append(out.cols, name)
-		} else {
-			return errors.New("expect column")
+		expr, err := p.ParseExpr()
+		if err != nil {
+			return err
 		}
+
+		out.cols = append(out.cols, expr)
 	}
 
 	if len(out.cols) == 0 {
@@ -322,13 +343,13 @@ func (p *Parser) parseUpdate(out *StmtUpdate) error {
 	}
 
 	for !p.tryKeyword("WHERE") {
-		expr := database.NamedCell{}
+		expr := ExprAssign{}
 
 		if len(out.value) > 0 && !p.tryKeyword(",") {
 			return errors.New("expect ,")
 		}
 
-		if err := p.parseEqual(&expr); err != nil {
+		if err := p.parseAssign(&expr); err != nil {
 			return err
 		}
 

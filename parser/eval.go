@@ -125,3 +125,33 @@ func evalExpr(schema *database.Schema, row database.Row, expr any) (*database.Ce
 		panic("unknown expr type")
 	}
 }
+
+func ExprTostr(expr any) string {
+	switch e := expr.(type) {
+	case string:
+		return e
+	case *database.Cell:
+		return database.CellToStr(e)
+	case *ExprUnOp:
+		switch e.op {
+		case database.OP_NEG:
+			return "-" + ExprTostr(e.kid)
+		case database.OP_NOT:
+			return "NOT " + ExprTostr(e.kid)
+		default:
+			panic("unreachable")
+		}
+	case *ExprBinOp:
+		return "(" + ExprTostr(e.left) + " " + database.ExpropToStr(e.op) + " " + ExprTostr(e.right) + ")"
+	default:
+		panic("unreachable")
+	}
+}
+
+func ExprsToHeader(cols []any) (header []string) {
+	for _, expr := range cols {
+		header = append(header, ExprTostr(expr))
+	}
+
+	return
+}

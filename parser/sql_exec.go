@@ -30,7 +30,7 @@ func (exec *Exec) ExecStmt(stmt any) (r SQLResult, err error) {
 	case *StmtCreatTable:
 		err = exec.execCreateTable(ptr)
 	case *StmtSelect:
-		r.Header = ptr.cols
+		r.Header = ExprsToHeader(ptr.cols)
 		r.Values, err = exec.execSelect(ptr)
 	case *StmtInsert:
 		r.Updated, err = exec.execInsert(ptr)
@@ -130,7 +130,17 @@ func (exec *Exec) execUpdate(stmt *StmtUpdate) (count int, err error) {
 		return 0, err
 	}
 
-	if err = database.FillNonPKey(&schema, stmt.value, row); err != nil {
+	updates := make([]database.NamedCell, len(stmt.value))
+	for idx, assign := range stmt.value {
+		cell, err := evalExpr(&schema, row, assign.expr)
+		if err != nil {
+			return 0, err
+		}
+
+		updates[idx] = database.NamedCell{Column: assign.column, Value: *cell}
+	}
+
+	if err = database.FillNonPKey(&schema, updates, row); err != nil {
 		return 0, err
 	}
 
@@ -151,11 +161,6 @@ func (exec *Exec) execSelect(stmt *StmtSelect) ([]database.Row, error) {
 		return nil, err
 	}
 
-	indices, err := database.LookupColumns(schema.Cols, stmt.cols)
-	if err != nil {
-		return nil, err
-	}
-
 	row, err := database.MakePKey(&schema, stmt.keys)
 	if err != nil {
 		return nil, err
@@ -165,6 +170,15 @@ func (exec *Exec) execSelect(stmt *StmtSelect) ([]database.Row, error) {
 		return nil, err
 	}
 
-	row = database.SubsetRow(row, indices)
-	return []database.Row{row}, nil
+	out := make(database.Row, len(stmt.cols))
+	for idx, expr := range stmt.cols {
+		cell, err := evalExpr(&schema, row, expr)
+		if err != nil {
+			return nil, err
+		}
+
+		out[idx] = *cell
+	}
+
+	return []database.Row{out}, nil
 }
