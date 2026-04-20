@@ -99,7 +99,7 @@ func (exec *Exec) execDelete(stmt *StmtDelete) (count int, err error) {
 		return 0, err
 	}
 
-	row, err := database.MakePKey(&schema, stmt.keys)
+	row, err := MatchPKey(&schema, stmt.cond)
 	if err != nil {
 		return 0, err
 	}
@@ -121,7 +121,7 @@ func (exec *Exec) execUpdate(stmt *StmtUpdate) (count int, err error) {
 		return 0, err
 	}
 
-	row, err := database.MakePKey(&schema, stmt.keys)
+	row, err := MatchPKey(&schema, stmt.cond)
 	if err != nil {
 		return 0, err
 	}
@@ -161,7 +161,7 @@ func (exec *Exec) execSelect(stmt *StmtSelect) ([]database.Row, error) {
 		return nil, err
 	}
 
-	row, err := database.MakePKey(&schema, stmt.keys)
+	row, err := MatchPKey(&schema, stmt.cond)
 	if err != nil {
 		return nil, err
 	}

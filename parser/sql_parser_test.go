@@ -215,7 +215,7 @@ func TestParseSelect(t *testing.T) {
 	stmt := StmtSelect{
 		table: "t",
 		cols:  []any{"a"},
-		keys:  []database.NamedCell{{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 1}}},
+		cond:  &ExprBinOp{op: database.OP_EQ, left: "c", right: &database.Cell{Type: database.TypeI64, I64: 1}},
 	}
 	testParseSelect(t, s, stmt)
 
@@ -223,9 +223,9 @@ func TestParseSelect(t *testing.T) {
 	stmt = StmtSelect{
 		table: "T",
 		cols:  []any{"a", "b_02"},
-		keys: []database.NamedCell{
-			{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 1}},
-			{Column: "d", Value: database.Cell{Type: database.TypeStr, Str: []byte("e")}},
+		cond: &ExprBinOp{op: database.OP_AND,
+			left:  &ExprBinOp{op: database.OP_EQ, left: "c", right: &database.Cell{Type: database.TypeI64, I64: 1}},
+			right: &ExprBinOp{op: database.OP_EQ, left: "d", right: &database.Cell{Type: database.TypeStr, Str: []byte("e")}},
 		},
 	}
 	testParseSelect(t, s, stmt)
@@ -237,9 +237,9 @@ func TestParseSelect(t *testing.T) {
 	stmt = StmtSelect{
 		table: "users",
 		cols:  []any{"x", "y"},
-		keys: []database.NamedCell{
-			{Column: "age", Value: database.Cell{Type: database.TypeI64, I64: 42}},
-			{Column: "name", Value: database.Cell{Type: database.TypeStr, Str: []byte("bob")}},
+		cond: &ExprBinOp{op: database.OP_AND,
+			left:  &ExprBinOp{op: database.OP_EQ, left: "age", right: &database.Cell{Type: database.TypeI64, I64: 42}},
+			right: &ExprBinOp{op: database.OP_EQ, left: "name", right: &database.Cell{Type: database.TypeStr, Str: []byte("bob")}},
 		},
 	}
 	testParseSelect(t, s, stmt)
@@ -310,7 +310,7 @@ func TestParseStmt(t *testing.T) {
 	stmt = &StmtSelect{
 		table: "t",
 		cols:  []any{"a"},
-		keys:  []database.NamedCell{{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 1}}},
+		cond:  &ExprBinOp{op: database.OP_EQ, left: "c", right: &database.Cell{Type: database.TypeI64, I64: 1}},
 	}
 	testParseStmt(t, s, stmt)
 
@@ -318,9 +318,9 @@ func TestParseStmt(t *testing.T) {
 	stmt = &StmtSelect{
 		table: "T",
 		cols:  []any{"a", "b_02"},
-		keys: []database.NamedCell{
-			{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 1}},
-			{Column: "d", Value: database.Cell{Type: database.TypeStr, Str: []byte("e")}},
+		cond: &ExprBinOp{op: database.OP_AND,
+			left:  &ExprBinOp{op: database.OP_EQ, left: "c", right: &database.Cell{Type: database.TypeI64, I64: 1}},
+			right: &ExprBinOp{op: database.OP_EQ, left: "d", right: &database.Cell{Type: database.TypeStr, Str: []byte("e")}},
 		},
 	}
 	testParseStmt(t, s, stmt)
@@ -347,14 +347,20 @@ func TestParseStmt(t *testing.T) {
 	stmt = &StmtUpdate{
 		table: "t",
 		value: []ExprAssign{{column: "a", expr: &database.Cell{Type: database.TypeI64, I64: 1}}, {column: "b", expr: &database.Cell{Type: database.TypeI64, I64: 2}}},
-		keys:  []database.NamedCell{{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 3}}, {Column: "d", Value: database.Cell{Type: database.TypeI64, I64: 4}}},
+		cond: &ExprBinOp{op: database.OP_AND,
+			left:  &ExprBinOp{op: database.OP_EQ, left: "c", right: &database.Cell{Type: database.TypeI64, I64: 3}},
+			right: &ExprBinOp{op: database.OP_EQ, left: "d", right: &database.Cell{Type: database.TypeI64, I64: 4}},
+		},
 	}
 	testParseStmt(t, s, stmt)
 
 	s = "delete from t where c = 3 and d = 4;"
 	stmt = &StmtDelete{
 		table: "t",
-		keys:  []database.NamedCell{{Column: "c", Value: database.Cell{Type: database.TypeI64, I64: 3}}, {Column: "d", Value: database.Cell{Type: database.TypeI64, I64: 4}}},
+		cond: &ExprBinOp{op: database.OP_AND,
+			left:  &ExprBinOp{op: database.OP_EQ, left: "c", right: &database.Cell{Type: database.TypeI64, I64: 3}},
+			right: &ExprBinOp{op: database.OP_EQ, left: "d", right: &database.Cell{Type: database.TypeI64, I64: 4}},
+		},
 	}
 	testParseStmt(t, s, stmt)
 }

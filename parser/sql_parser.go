@@ -21,7 +21,7 @@ func NewParser(s string) Parser {
 type StmtSelect struct {
 	table string
 	cols  []any
-	keys  []database.NamedCell
+	cond  any
 }
 
 type StmtCreatTable struct {
@@ -37,13 +37,13 @@ type StmtInsert struct {
 
 type StmtUpdate struct {
 	table string
-	keys  []database.NamedCell
+	cond  any
 	value []ExprAssign
 }
 
 type StmtDelete struct {
 	table string
-	keys  []database.NamedCell
+	cond  any
 }
 
 type ExprAssign struct {
@@ -268,33 +268,23 @@ func (p *Parser) parseAssign(out *ExprAssign) (err error) {
 	return err
 }
 
-func (p *Parser) parseWhere(out *[]database.NamedCell) error {
+func (p *Parser) parseWhere() (expr any, err error) {
 	if !p.tryKeyword("WHERE") {
-		return errors.New("expect keyword")
+		return nil, errors.New("expect keyword")
 	}
 
-	for !p.tryPunctuation(";") {
-		expr := database.NamedCell{}
-
-		if len(*out) > 0 && !p.tryKeyword("AND") {
-			return errors.New("expect AND")
-		}
-
-		if err := p.parseEqual(&expr); err != nil {
-			return err
-		}
-
-		*out = append(*out, expr)
+	if expr, err = p.ParseExpr(); err != nil {
+		return nil, err
 	}
 
-	if len(*out) == 0 {
-		return errors.New("expect where clause")
+	if !p.tryPunctuation(";") {
+		return nil, errors.New("expect ;")
 	}
 
-	return nil
+	return expr, nil
 }
 
-func (p *Parser) parseSelect(out *StmtSelect) error {
+func (p *Parser) parseSelect(out *StmtSelect) (err error) {
 	for !p.tryKeyword("FROM") {
 		if len(out.cols) > 0 && !p.tryPunctuation(",") {
 			return errors.New("expect comma")
@@ -318,20 +308,22 @@ func (p *Parser) parseSelect(out *StmtSelect) error {
 		out.table = name
 	}
 
-	return p.parseWhere(&out.keys)
+	out.cond, err = p.parseWhere()
+	return err
 }
 
-func (p *Parser) parseDelete(out *StmtDelete) error {
+func (p *Parser) parseDelete(out *StmtDelete) (err error) {
 	if name, ok := p.tryName(); !ok {
 		return errors.New("expect table name")
 	} else {
 		out.table = name
 	}
 
-	return p.parseWhere(&out.keys)
+	out.cond, err = p.parseWhere()
+	return err
 }
 
-func (p *Parser) parseUpdate(out *StmtUpdate) error {
+func (p *Parser) parseUpdate(out *StmtUpdate) (err error) {
 	if name, ok := p.tryName(); !ok {
 		return errors.New("expect table name")
 	} else {
@@ -361,7 +353,8 @@ func (p *Parser) parseUpdate(out *StmtUpdate) error {
 	}
 
 	p.pos -= len("WHERE")
-	return p.parseWhere(&out.keys)
+	out.cond, err = p.parseWhere()
+	return err
 }
 
 func (p *Parser) parseCommaList(item func() error) error {
