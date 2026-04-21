@@ -62,6 +62,10 @@ type ExprUnOp struct {
 	kid any
 }
 
+type ExprTuple struct {
+	kids []any
+}
+
 func (p *Parser) ParseStmt() (out any, err error) {
 	if p.tryKeyword("SELECT") {
 		stmt := &StmtSelect{}
@@ -484,17 +488,38 @@ func (p *Parser) parseCreateTable(out *StmtCreatTable) error {
 	return nil
 }
 
+func (p *Parser) parseTuple() (expr any, err error) {
+	kids := []any{}
+	err = p.parseCommaList(func() error {
+		expr, err := p.ParseExpr()
+		if err != nil {
+			return err
+		}
+
+		kids = append(kids, expr)
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(kids) == 0 {
+		return nil, errors.New("empty tuple")
+	}
+
+	if len(kids) == 1 {
+		return kids[0], nil
+	}
+
+	return &ExprTuple{kids}, nil
+}
+
 func (p *Parser) parseAtom() (expr any, err error) {
 	if p.tryPunctuation("(") {
-		if expr, err = p.ParseExpr(); err != nil {
-			return nil, err
-		}
-
-		if !p.tryPunctuation(")") {
-			return nil, errors.New("expect )")
-		}
-
-		return expr, nil
+		p.pos--
+		return p.parseTuple()
 	}
 
 	if name, ok := p.tryName(); ok {

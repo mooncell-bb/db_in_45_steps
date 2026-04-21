@@ -67,3 +67,41 @@ func SubsetRow(row Row, indices []int) (out Row) {
 
 	return
 }
+
+func ExtractPKey(schema *Schema, pkey []NamedCell) (cells []Cell, ok bool) {
+	if len(schema.PKey) != len(pkey) {
+		return nil, false
+	}
+
+	for _, idx := range schema.PKey {
+		col := schema.Cols[idx]
+
+		i := slices.IndexFunc(pkey, func(e NamedCell) bool {
+			return col.Name == e.Column && col.Type == e.Value.Type
+		})
+
+		if i < 0 {
+			return nil, false
+		}
+
+		cells = append(cells, pkey[i].Value)
+	}
+
+	return cells, true
+}
+
+func IsPKeyPrefix(schema *Schema, cols []string, cells []Cell) bool {
+	if len(cols) != len(cells) || len(cols) > len(schema.PKey) {
+		return false
+	}
+
+	for i := range cols {
+		col := schema.Cols[schema.PKey[i]]
+
+		if col.Name != cols[i] || col.Type != cells[i].Type {
+			return false
+		}
+	}
+
+	return true
+}

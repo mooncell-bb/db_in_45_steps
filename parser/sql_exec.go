@@ -99,17 +99,28 @@ func (exec *Exec) execDelete(stmt *StmtDelete) (count int, err error) {
 		return 0, err
 	}
 
-	row, err := MatchPKey(&schema, stmt.cond)
+	iter, err := exec.execCond(&schema, stmt.cond)
 	if err != nil {
 		return 0, err
 	}
 
-	updated, err := exec.DB.Delete(&schema, row)
+	deletes := make([]database.Row, 0)
+	for ; err == nil && iter.Valid(); err = iter.Next() {
+		deletes = append(deletes, iter.Row().CopyRow())
+	}
+
+	for _, row := range deletes {
+		updated, err := exec.DB.Delete(&schema, row)
+		if err != nil {
+			return 0, err
+		}
+		if updated {
+			count++
+		}
+	}
+
 	if err != nil {
 		return 0, err
-	}
-	if updated {
-		count++
 	}
 
 	return count, nil
@@ -121,64 +132,83 @@ func (exec *Exec) execUpdate(stmt *StmtUpdate) (count int, err error) {
 		return 0, err
 	}
 
-	row, err := MatchPKey(&schema, stmt.cond)
+	iter, err := exec.execCond(&schema, stmt.cond)
 	if err != nil {
 		return 0, err
 	}
 
-	if ok, err := exec.DB.Select(&schema, row); err != nil || !ok {
-		return 0, err
-	}
+	for ; err == nil && iter.Valid(); err = iter.Next() {
+		row := iter.Row()
 
-	updates := make([]database.NamedCell, len(stmt.value))
-	for idx, assign := range stmt.value {
-		cell, err := evalExpr(&schema, row, assign.expr)
-		if err != nil {
+		updates := make([]database.NamedCell, len(stmt.value))
+		for i, assign := range stmt.value {
+			cell, err := evalExpr(&schema, row, assign.expr)
+			if err != nil {
+				return 0, nil
+			}
+
+			updates[i] = database.NamedCell{Column: assign.column, Value: *cell}
+		}
+
+		if err = database.FillNonPKey(&schema, updates, row); err != nil {
 			return 0, err
 		}
 
-		updates[idx] = database.NamedCell{Column: assign.column, Value: *cell}
+		updated, err := exec.DB.Update(&schema, row)
+		if err != nil {
+			return 0, err
+		}
+		if updated {
+			count++
+		}
 	}
 
-	if err = database.FillNonPKey(&schema, updates, row); err != nil {
-		return 0, err
-	}
-
-	updated, err := exec.DB.Update(&schema, row)
 	if err != nil {
 		return 0, err
-	}
-	if updated {
-		count++
 	}
 
 	return count, nil
 }
 
-func (exec *Exec) execSelect(stmt *StmtSelect) ([]database.Row, error) {
+func (exec *Exec) execSelect(stmt *StmtSelect) (output []database.Row, err error) {
 	schema, err := exec.DB.GetSchema(stmt.table)
 	if err != nil {
 		return nil, err
 	}
 
-	row, err := MatchPKey(&schema, stmt.cond)
+	iter, err := exec.execCond(&schema, stmt.cond)
 	if err != nil {
 		return nil, err
 	}
 
-	if ok, err := exec.DB.Select(&schema, row); err != nil || !ok {
+	for ; err == nil && iter.Valid(); err = iter.Next() {
+		row := iter.Row()
+
+		computed := make(database.Row, len(stmt.cols))
+		for i, expr := range stmt.cols {
+			cell, err := evalExpr(&schema, row, expr)
+			if err != nil {
+				return nil, err
+			}
+
+			computed[i] = *cell
+		}
+
+		output = append(output, computed)
+	}
+
+	if err != nil {
 		return nil, err
 	}
 
-	out := make(database.Row, len(stmt.cols))
-	for idx, expr := range stmt.cols {
-		cell, err := evalExpr(&schema, row, expr)
-		if err != nil {
-			return nil, err
-		}
+	return output, nil
+}
 
-		out[idx] = *cell
+func (exec *Exec) execCond(schema *database.Schema, cond any) (*database.RowIterator, error) {
+	req, err := MakeRange(schema, cond)
+	if err != nil {
+		return nil, err
 	}
 
-	return []database.Row{out}, nil
+	return exec.DB.Range(schema, req)
 }

@@ -88,7 +88,7 @@ func (row Row) DecodeKey(schema *Schema, key []byte) (err error) {
 		if len(key) == 0 {
 			return ErrDataLen
 		}
-		
+
 		if CellType(key[0]) != col.Type {
 			return errors.New("cell type mismatch")
 		}
@@ -152,4 +152,20 @@ func EncodeKeyPrefix(schema *Schema, prefix []Cell, positive bool) []byte {
 	}
 
 	return key
+}
+
+func (src Row) CopyRow() Row {
+	dst := make(Row, len(src))
+
+	for i, cell := range src {
+		dst[i].Type = cell.Type
+		dst[i].I64 = cell.I64
+
+		if cell.Str != nil {
+			dst[i].Str = make([]byte, len(cell.Str))
+			copy(dst[i].Str, cell.Str)
+		}
+	}
+
+	return dst
 }

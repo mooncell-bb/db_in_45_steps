@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -111,4 +112,101 @@ func TestExecStmt(t *testing.T) {
 	r, err = exec2.ExecStmt(stmt)
 	require.Nil(t, err)
 	require.Equal(t, []database.Row{makeRow(-1, 1, "ba", "b")}, r.Values)
+}
+
+func TestRangeQueries(t *testing.T) {
+	db := &database.DB{}
+	exec := &Exec{DB: db}
+	db.KV.Log.FileName = ".test_db"
+	defer os.Remove(".test_db")
+
+	exec.Open()
+	defer exec.Close()
+
+	os.Remove(".test_db")
+
+	s := "create table t (k int64, v int64, primary key (k));"
+	stmt := parseStmt(t, s)
+	_, err := exec.ExecStmt(stmt)
+	require.Nil(t, err)
+
+	for i := int64(0); i < 9; i += 2 {
+		s := fmt.Sprintf("insert into t values (%d, %d);", i, i)
+		stmt = parseStmt(t, s)
+		r, err := exec.ExecStmt(stmt)
+		require.Nil(t, err)
+		require.Equal(t, 1, r.Updated)
+	}
+
+	s = "select k, v from t where k >= 0;"
+	stmt = parseStmt(t, s)
+	r, err := exec.ExecStmt(stmt)
+	require.Nil(t, err)
+	expected := []database.Row{
+		makeRow(0, 0),
+		makeRow(2, 2),
+		makeRow(4, 4),
+		makeRow(6, 6),
+		makeRow(8, 8),
+	}
+	require.Equal(t, expected, r.Values)
+
+	s = "select k, v from t where k > 2 and k < 6;"
+	stmt = parseStmt(t, s)
+	r, err = exec.ExecStmt(stmt)
+	require.Nil(t, err)
+	expected = []database.Row{
+		makeRow(4, 4),
+	}
+	require.Equal(t, expected, r.Values)
+
+	s = "update t set v = v * 2 where k >= 2 and k <= 6;"
+	stmt = parseStmt(t, s)
+	r, err = exec.ExecStmt(stmt)
+	require.Nil(t, err)
+	require.Equal(t, 3, r.Updated)
+
+	s = "select k, v from t where k >= 2 and k <= 6;"
+	stmt = parseStmt(t, s)
+	r, err = exec.ExecStmt(stmt)
+	require.Nil(t, err)
+	expected = []database.Row{
+		makeRow(2, 4),
+		makeRow(4, 8),
+		makeRow(6, 12),
+	}
+	require.Equal(t, expected, r.Values)
+
+	s = "delete from t where k >= 6 and k <= 8;"
+	stmt = parseStmt(t, s)
+	r, err = exec.ExecStmt(stmt)
+	require.Nil(t, err)
+	require.Equal(t, 2, r.Updated)
+
+	s = "select k, v from t where k >= 0;"
+	stmt = parseStmt(t, s)
+	r, err = exec.ExecStmt(stmt)
+	require.Nil(t, err)
+	expected = []database.Row{
+		makeRow(0, 0),
+		makeRow(2, 4),
+		makeRow(4, 8),
+	}
+	require.Equal(t, expected, r.Values)
+
+	s = "delete from t where k > 2;"
+	stmt = parseStmt(t, s)
+	r, err = exec.ExecStmt(stmt)
+	require.Nil(t, err)
+	require.Equal(t, 1, r.Updated)
+
+	s = "select k, v from t where k >= 0;"
+	stmt = parseStmt(t, s)
+	r, err = exec.ExecStmt(stmt)
+	require.Nil(t, err)
+	expected = []database.Row{
+		makeRow(0, 0),
+		makeRow(2, 4),
+	}
+	require.Equal(t, expected, r.Values)
 }
