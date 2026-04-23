@@ -1,13 +1,16 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"os"
 )
 
 type SortedFile struct {
 	FileName string
 	fp       *os.File
+	nkeys    int
 }
 
 func (file *SortedFile) CreateFromSorted(kv SortedKV) (err error) {
@@ -71,6 +74,121 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 	if nkeys != kv.Size() {
 		panic("sortedkv error")
 	}
+	file.nkeys = kv.Size()
 
 	return file.fp.Sync()
+}
+
+func (file *SortedFile) index(pos int) (key []byte, val []byte, err error) {
+	var buf [8]byte
+	if _, err = file.fp.ReadAt(buf[:], int64(8+8*pos)); err != nil {
+		return nil, nil, err
+	}
+
+	offset := int64(binary.LittleEndian.Uint64(buf[:]))
+	if int64(8+8*file.nkeys) > offset {
+		return nil, nil, errors.New("corrupted file")
+	}
+
+	if _, err = file.fp.ReadAt(buf[:], offset); err != nil {
+		return nil, nil, nil
+	}
+
+	klen := binary.LittleEndian.Uint32(buf[0:4])
+	vlen := binary.LittleEndian.Uint32(buf[4:8])
+	data := make([]byte, klen+vlen)
+	if _, err = file.fp.ReadAt(data, offset+8); err != nil {
+		return nil, nil, err
+	}
+
+	return data[:klen], data[klen:], nil
+}
+
+func (file *SortedFile) findPos(target []byte) (int, error) {
+	lo, hi := 0, file.nkeys
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+
+		key, _, err := file.index(mid)
+		if err != nil {
+			return -1, err
+		}
+
+		r := bytes.Compare(target, key)
+		if r > 0 {
+			lo = mid + 1
+		} else if r < 0 {
+			hi = mid
+		} else {
+			return mid, nil
+		}
+	}
+
+	return lo, nil
+}
+
+type SortedFileIter struct {
+	file *SortedFile
+	pos  int
+	key  []byte
+	val  []byte
+}
+
+func (file *SortedFile) Seek(key []byte) (SortedKVIter, error) {
+	pos, err := file.findPos(key)
+	if err != nil {
+		return nil, err
+	}
+
+	iter := &SortedFileIter{file: file, pos: pos}
+	if err = iter.loadCurrent(); err != nil {
+		return nil, err
+	}
+
+	return iter, nil
+}
+
+func (file *SortedFile) Iter() (SortedKVIter, error) {
+	iter := &SortedFileIter{file: file, pos: 0}
+	if err := iter.loadCurrent(); err != nil {
+		return nil, err
+	}
+
+	return iter, nil
+}
+
+func (iter *SortedFileIter) loadCurrent() (err error) {
+	if iter.Valid() {
+		iter.key, iter.val, err = iter.file.index(iter.pos)
+	}
+
+	return err
+}
+
+func (iter *SortedFileIter) Valid() bool {
+	return 0 <= iter.pos && iter.pos < iter.file.nkeys
+}
+
+func (iter *SortedFileIter) Key() []byte {
+	return iter.key
+}
+
+func (iter *SortedFileIter) Val() []byte {
+	return iter.val
+}
+
+func (iter *SortedFileIter) Next() error {
+	if iter.pos < iter.file.nkeys {
+		iter.pos++
+	}
+
+	return iter.loadCurrent()
+}
+
+func (iter *SortedFileIter) Prev() error {
+	if iter.pos >= 0 {
+		iter.pos--
+	}
+
+	return iter.loadCurrent()
 }
