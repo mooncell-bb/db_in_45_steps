@@ -14,9 +14,8 @@ const (
 )
 
 type KV struct {
-	Log  Log
-	Keys [][]byte
-	Vals [][]byte
+	Log Log
+	Mem SortedArray
 }
 
 func (kv *KV) Open() error {
@@ -40,16 +39,15 @@ func (kv *KV) Open() error {
 		return bytes.Compare(a.key, b.key)
 	})
 
-	kv.Keys, kv.Vals = kv.Keys[:0], kv.Vals[:0]
+	kv.Mem.Clear()
 	for _, ent := range entries {
-		n := len(kv.Keys)
-		if n > 0 && bytes.Equal(kv.Keys[n-1], ent.key) {
-			kv.Keys, kv.Vals = kv.Keys[:n-1], kv.Vals[:n-1]
+		n := kv.Mem.Size()
+		if n > 0 && bytes.Equal(kv.Mem.Key(n-1), ent.key) {
+			kv.Mem.Pop()
 		}
 
 		if !ent.deleted {
-			kv.Keys = append(kv.Keys, ent.key)
-			kv.Vals = append(kv.Vals, ent.val)
+			kv.Mem.Push(ent.key, ent.val)
 		}
 	}
 
@@ -61,11 +59,7 @@ func (kv *KV) Close() error {
 }
 
 func (kv *KV) Get(key []byte) (val []byte, ok bool, err error) {
-	if idx, ok := slices.BinarySearchFunc(kv.Keys, key, bytes.Compare); ok {
-		return kv.Vals[idx], true, nil
-	}
-
-	return nil, false, nil
+	return kv.Mem.Get(key)
 }
 
 func (kv *KV) Set(key []byte, val []byte) (updated bool, err error) {
@@ -73,17 +67,20 @@ func (kv *KV) Set(key []byte, val []byte) (updated bool, err error) {
 }
 
 func (kv *KV) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, err error) {
-	idx, exist := slices.BinarySearchFunc(kv.Keys, key, bytes.Compare)
+	oldVal, exist, err := kv.Get(key)
+	if err != nil {
+		return false, err
+	}
 
 	switch mode {
 	case ModeUpsert:
-		updated = !exist || !bytes.Equal(kv.Vals[idx], val)
+		updated = !exist || !bytes.Equal(oldVal, val)
 	case ModeInsert:
 		updated = !exist
 	case ModeUpdate:
-		updated = exist && !bytes.Equal(kv.Vals[idx], val)
+		updated = exist && !bytes.Equal(oldVal, val)
 	default:
-		panic("update mode mismatch")
+		panic("unreachable")
 	}
 
 	if updated {
@@ -91,81 +88,33 @@ func (kv *KV) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, err 
 			return false, err
 		}
 
-		if exist {
-			kv.Vals[idx] = val
-		} else {
-			kv.Keys = slices.Insert(kv.Keys, idx, key)
-			kv.Vals = slices.Insert(kv.Vals, idx, val)
+		_, err = kv.Mem.Set(key, val)
+		if err != nil {
+			panic("mem set error")
 		}
 	}
 
-	return
+	return updated, nil
 }
 
 func (kv *KV) Del(key []byte) (deleted bool, err error) {
-	if idx, ok := slices.BinarySearchFunc(kv.Keys, key, bytes.Compare); ok {
-		if err := kv.Log.Write(&Entry{key: key, deleted: true}); err != nil {
-			return false, err
-		}
-
-		kv.Keys = slices.Delete(kv.Keys, idx, idx+1)
-		kv.Vals = slices.Delete(kv.Vals, idx, idx+1)
-		return true, nil
+	if _, exist, err := kv.Get(key); err != nil || !exist {
+		return false, err
 	}
 
-	return false, nil
-}
-
-type KVIterator struct {
-	keys [][]byte
-	vals [][]byte
-	pos  int
-}
-
-func (kv *KV) Seek(key []byte) (*KVIterator, error) {
-	pos, _ := slices.BinarySearchFunc(kv.Keys, key, bytes.Compare)
-
-	return &KVIterator{keys: kv.Keys, vals: kv.Vals, pos: pos}, nil
-}
-
-func (iter *KVIterator) Valid() bool {
-	return 0 <= iter.pos && iter.pos < len(iter.keys)
-}
-
-func (iter *KVIterator) Key() []byte {
-	if iter.Valid() {
-		return iter.keys[iter.pos]
+	if err = kv.Log.Write(&Entry{key: key, deleted: true}); err != nil {
+		return false, err
 	}
 
-	return nil
+	return kv.Mem.Del(key)
 }
 
-func (iter *KVIterator) Val() []byte {
-	if iter.Valid() {
-		return iter.vals[iter.pos]
-	}
-
-	return nil
-}
-
-func (iter *KVIterator) Next() error {
-	if iter.pos < len(iter.keys) {
-		iter.pos++
-	}
-
-	return nil
-}
-
-func (iter *KVIterator) Prev() error {
-	if iter.pos >= 0 {
-		iter.pos--
-	}
-
-	return nil
+func (kv *KV) Seek(key []byte) (SortedKVIter, error) {
+	return kv.Mem.Seek(key)
 }
 
 type RangedKVIter struct {
-	iter KVIterator
+	iter SortedKVIter
 	stop []byte
 	desc bool
 }
@@ -182,7 +131,7 @@ func (kv *KV) Range(start, stop []byte, desc bool) (*RangedKVIter, error) {
 		}
 	}
 
-	return &RangedKVIter{iter: *iter, stop: stop, desc: desc}, nil
+	return &RangedKVIter{iter: iter, stop: stop, desc: desc}, nil
 }
 
 func (iter *RangedKVIter) Valid() bool {
