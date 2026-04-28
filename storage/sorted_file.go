@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io/fs"
 	"os"
 )
 
@@ -11,6 +12,41 @@ type SortedFile struct {
 	FileName string
 	fp       *os.File
 	nkeys    int
+}
+
+func (file *SortedFile) Open() (err error) {
+	file.fp, err = os.OpenFile(file.FileName, os.O_RDONLY, 0o644)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+
+		return err
+	}
+
+	if err = file.openExisting(); err != nil {
+		_ = file.Close()
+	}
+
+	return err
+}
+
+func (file *SortedFile) openExisting() error {
+	var buf [8]byte
+	if _, err := file.fp.ReadAt(buf[:8], 0); err != nil {
+		return err
+	}
+
+	file.nkeys = int(binary.LittleEndian.Uint64(buf[:8]))
+	return nil
+}
+
+func (file *SortedFile) Close() error {
+	if file.fp == nil {
+		return nil
+	}
+
+	return file.fp.Close()
 }
 
 func (file *SortedFile) CreateFromSorted(kv SortedKV) (err error) {
@@ -25,21 +61,17 @@ func (file *SortedFile) CreateFromSorted(kv SortedKV) (err error) {
 	return err
 }
 
-func (file *SortedFile) Close() error {
-	return file.fp.Close()
-}
-
 func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:8], uint64(kv.Size()))
-	if _, err = file.fp.WriteAt(buf[:8], 0); err != nil {
-		return err
-	}
-
 	nkeys := 0
-	offset := 8 + 8*kv.Size()
+	offset := 8 + 8*kv.EstimatedSize()
 	iter, err := kv.Iter()
+
 	for ; err == nil && iter.Valid(); err = iter.Next() {
+		if iter.Deleted() {
+			continue
+		}
+
 		key, val := iter.Key(), iter.Val()
 
 		binary.LittleEndian.PutUint64(buf[:8], uint64(offset))
@@ -71,10 +103,15 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 		return err
 	}
 
-	if nkeys != kv.Size() {
-		panic("sortedkv error")
+	if nkeys > kv.EstimatedSize() {
+		panic("SortedFile Error")
 	}
-	file.nkeys = kv.Size()
+	file.nkeys = nkeys
+
+	binary.LittleEndian.PutUint64(buf[:8], uint64(nkeys))
+	if _, err = file.fp.WriteAt(buf[:8], 0); err != nil {
+		return err
+	}
 
 	return file.fp.Sync()
 }
@@ -125,6 +162,10 @@ func (file *SortedFile) findPos(target []byte) (int, error) {
 	}
 
 	return lo, nil
+}
+
+func (file *SortedFile) EstimatedSize() int {
+	return file.nkeys
 }
 
 type SortedFileIter struct {
@@ -191,4 +232,8 @@ func (iter *SortedFileIter) Prev() error {
 	}
 
 	return iter.loadCurrent()
+}
+
+func (iter *SortedFileIter) Deleted() bool {
+	return false
 }

@@ -30,7 +30,14 @@ func syncDir(file string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	defer syscall.Close(dirfd)
 	return syscall.Fsync(dirfd)
+}
+
+func renameSync(src string, dst string) error {
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	return syncDir(dst)
 }

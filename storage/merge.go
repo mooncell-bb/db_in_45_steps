@@ -4,23 +4,12 @@ import "bytes"
 
 type MergedSortedKV []SortedKV
 
-func (m MergedSortedKV) Size() (total int) {
+func (m MergedSortedKV) EstimatedSize() (total int) {
 	for _, sub := range m {
-		total += sub.Size()
+		total += sub.EstimatedSize()
 	}
 
 	return total
-}
-
-func (m MergedSortedKV) Iter() (iter SortedKVIter, err error) {
-	levels := make([]SortedKVIter, len(m))
-	for i, sub := range m {
-		if levels[i], err = sub.Iter(); err != nil {
-			return nil, err
-		}
-	}
-
-	return &MergedSortedKVIter{levels, levelsLowest(levels)}, nil
 }
 
 type MergedSortedKVIter struct {
@@ -52,6 +41,28 @@ func levelsHighest(levels []SortedKVIter) int {
 	return win
 }
 
+func (m MergedSortedKV) Iter() (iter SortedKVIter, err error) {
+	levels := make([]SortedKVIter, len(m))
+	for i, sub := range m {
+		if levels[i], err = sub.Iter(); err != nil {
+			return nil, err
+		}
+	}
+
+	return &MergedSortedKVIter{levels, levelsLowest(levels)}, nil
+}
+
+func (m MergedSortedKV) Seek(key []byte) (iter SortedKVIter, err error) {
+	levels := make([]SortedKVIter, len(m))
+	for i, sub := range m {
+		if levels[i], err = sub.Seek(key); err != nil {
+			return nil, err
+		}
+	}
+
+	return &MergedSortedKVIter{levels, levelsLowest(levels)}, nil
+}
+
 func (iter *MergedSortedKVIter) Valid() bool {
 	return iter.which >= 0
 }
@@ -62,6 +73,10 @@ func (iter *MergedSortedKVIter) Key() []byte {
 
 func (iter *MergedSortedKVIter) Val() []byte {
 	return iter.levels[iter.which].Val()
+}
+
+func (iter *MergedSortedKVIter) Deleted() bool {
+	return iter.levels[iter.which].Deleted()
 }
 
 func (iter *MergedSortedKVIter) Next() error {

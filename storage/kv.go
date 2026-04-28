@@ -2,6 +2,9 @@ package storage
 
 import (
 	"bytes"
+	"io"
+	"os"
+	"path"
 	"slices"
 )
 
@@ -14,21 +17,46 @@ const (
 )
 
 type KV struct {
-	Log Log
-	Mem SortedArray
+	Log  Log
+	Mem  SortedArray
+	Main SortedFile
+	MultiClosers
 }
 
-func (kv *KV) Open() error {
+func (kv *KV) Open() (err error) {
+	if err = kv.openAll(); err != nil {
+		_ = kv.Close()
+	}
+
+	return err
+}
+
+func (kv *KV) openAll() error {
+	if err := kv.openLog(); err != nil {
+		return err
+	}
+	return kv.openSSTable()
+}
+
+func (kv *KV) openLog() error {
 	if err := kv.Log.Open(); err != nil {
 		return err
 	}
 
+	kv.MultiClosers = append(kv.MultiClosers, &kv.Log)
+
 	entries := []Entry{}
 	for {
 		ent := Entry{}
-		if eof, err := kv.Log.Read(&ent); err != nil {
+		eof, err := kv.Log.Read(&ent)
+		if err != nil {
+			if err == ErrBadSum || err == io.ErrUnexpectedEOF {
+				break
+			}
 			return err
-		} else if eof {
+		}
+
+		if eof {
 			break
 		}
 
@@ -46,20 +74,35 @@ func (kv *KV) Open() error {
 			kv.Mem.Pop()
 		}
 
-		if !ent.deleted {
-			kv.Mem.Push(ent.key, ent.val)
-		}
+		kv.Mem.Push(ent.key, ent.val, ent.deleted)
 	}
 
 	return nil
 }
 
-func (kv *KV) Close() error {
-	return kv.Log.Close()
+func (kv *KV) openSSTable() error {
+	if kv.Main.FileName != "" {
+		if err := kv.Main.Open(); err != nil {
+			return err
+		}
+
+		kv.MultiClosers = append(kv.MultiClosers, &kv.Main)
+	}
+
+	return nil
 }
 
 func (kv *KV) Get(key []byte) (val []byte, ok bool, err error) {
-	return kv.Mem.Get(key)
+	iter, err := kv.Seek(key)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if iter.Valid() && bytes.Equal(iter.Key(), key) {
+		return iter.Val(), true, nil
+	}
+
+	return nil, false, nil
 }
 
 func (kv *KV) Set(key []byte, val []byte) (updated bool, err error) {
@@ -106,11 +149,55 @@ func (kv *KV) Del(key []byte) (deleted bool, err error) {
 		return false, err
 	}
 
-	return kv.Mem.Del(key)
+	_, err = kv.Mem.Del(key)
+	
+	return true, nil
 }
 
 func (kv *KV) Seek(key []byte) (SortedKVIter, error) {
-	return kv.Mem.Seek(key)
+	m := MergedSortedKV{&kv.Mem, &kv.Main}
+
+	iter, err := m.Seek(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return FilterDeleted(iter)
+}
+
+func (kv *KV) Compact() error {
+	if kv.Main.FileName == "" {
+		panic("Storage FileName Error")
+	}
+
+	fp, err := os.CreateTemp(path.Dir(kv.Main.FileName), "tmp_sstable")
+	if err != nil {
+		return err
+	}
+
+	filename := fp.Name()
+	defer os.Remove(filename)
+
+	file := SortedFile{FileName: filename}
+	m := MergedSortedKV{&kv.Mem, &kv.Main}
+	if err := file.CreateFromSorted(m); err != nil {
+		return err
+	}
+
+	fp.Close()
+	_ = kv.Main.Close()
+	_ = file.Close()
+	if err := renameSync(file.FileName, kv.Main.FileName); err != nil {
+		_ = kv.Main.Open()
+		return err
+	}
+
+	if err = kv.Main.Open(); err != nil {
+		return err
+	}
+
+	kv.Mem.Clear()
+	return kv.Log.Truncate()
 }
 
 type RangedKVIter struct {
