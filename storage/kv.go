@@ -150,7 +150,7 @@ func (kv *KV) Del(key []byte) (deleted bool, err error) {
 	}
 
 	_, err = kv.Mem.Del(key)
-	
+
 	return true, nil
 }
 
@@ -176,6 +176,7 @@ func (kv *KV) Compact() error {
 	}
 
 	filename := fp.Name()
+	_ = fp.Close()
 	defer os.Remove(filename)
 
 	file := SortedFile{FileName: filename}
@@ -184,7 +185,6 @@ func (kv *KV) Compact() error {
 		return err
 	}
 
-	fp.Close()
 	_ = kv.Main.Close()
 	_ = file.Close()
 	if err := renameSync(file.FileName, kv.Main.FileName); err != nil {
