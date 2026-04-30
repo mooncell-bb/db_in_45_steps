@@ -11,12 +11,11 @@ import (
 
 func TestTableByPKey(t *testing.T) {
 	db := DB{}
-	db.KV.Log.FileName = ".test_db"
+	db.KV.Options.Dirpath = "test_db"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
+	os.RemoveAll(db.KV.Options.Dirpath)
 	err := db.Open()
-	defer os.Remove(".test_db")
-
-	os.Remove(".test_db")
 	assert.Nil(t, err)
 	defer db.Close()
 
@@ -67,12 +66,11 @@ func TestTableByPKey(t *testing.T) {
 
 func TestTableUpsert(t *testing.T) {
 	db := DB{}
-	db.KV.Log.FileName = ".test_db_upsert"
+	db.KV.Options.Dirpath = "test_db_upsert"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
+	os.RemoveAll(db.KV.Options.Dirpath)
 	err := db.Open()
-	defer os.Remove(".test_db_upsert")
-
-	os.Remove(".test_db_upsert")
 	assert.Nil(t, err)
 	defer db.Close()
 
@@ -117,12 +115,11 @@ func TestTableUpsert(t *testing.T) {
 
 func TestTableUpdateMode(t *testing.T) {
 	db := DB{}
-	db.KV.Log.FileName = ".test_db_update_mode"
+	db.KV.Options.Dirpath = "test_db_update_mode"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
+	os.RemoveAll(db.KV.Options.Dirpath)
 	err := db.Open()
-	defer os.Remove(".test_db_update_mode")
-
-	os.Remove(".test_db_update_mode")
 	assert.Nil(t, err)
 	defer db.Close()
 
@@ -166,10 +163,10 @@ func TestTableUpdateMode(t *testing.T) {
 
 func TestIterByPKey(t *testing.T) {
 	db := DB{}
-	db.KV.Log.FileName = ".test_db_iter"
-	defer os.Remove(db.KV.Log.FileName)
+	db.KV.Options.Dirpath = "test_db_iter"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
-	os.Remove(db.KV.Log.FileName)
+	os.RemoveAll(db.KV.Options.Dirpath)
 	err := db.Open()
 	assert.Nil(t, err)
 	defer db.Close()
@@ -302,10 +299,10 @@ func rangeQuery(sorted []int64, start int64, stop int64, desc bool) (out []int64
 
 func TestIteratorValid(t *testing.T) {
 	db := DB{}
-	db.KV.Log.FileName = ".test_db_valid"
-	defer os.Remove(db.KV.Log.FileName)
+	db.KV.Options.Dirpath = "test_db_valid"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
-	os.Remove(db.KV.Log.FileName)
+	os.RemoveAll(db.KV.Options.Dirpath)
 	err := db.Open()
 	assert.Nil(t, err)
 	defer db.Close()
@@ -358,10 +355,10 @@ func TestIteratorValid(t *testing.T) {
 
 func TestIteratorRow(t *testing.T) {
 	db := DB{}
-	db.KV.Log.FileName = ".test_db_row"
-	defer os.Remove(db.KV.Log.FileName)
+	db.KV.Options.Dirpath = "test_db_row"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
-	os.Remove(db.KV.Log.FileName)
+	os.RemoveAll(db.KV.Options.Dirpath)
 	err := db.Open()
 	assert.Nil(t, err)
 	defer db.Close()
@@ -409,10 +406,10 @@ func TestIteratorRow(t *testing.T) {
 
 func TestIteratorNext(t *testing.T) {
 	db := DB{}
-	db.KV.Log.FileName = ".test_db_next"
-	defer os.Remove(db.KV.Log.FileName)
+	db.KV.Options.Dirpath = "test_db_next"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
-	os.Remove(db.KV.Log.FileName)
+	os.RemoveAll(db.KV.Options.Dirpath)
 	err := db.Open()
 	assert.Nil(t, err)
 	defer db.Close()

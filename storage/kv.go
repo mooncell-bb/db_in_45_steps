@@ -2,7 +2,10 @@ package storage
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"slices"
@@ -16,10 +19,17 @@ const (
 	ModeUpdate UpdateMode = 2 // update existing
 )
 
+type KVOptions struct {
+	Dirpath string
+}
+
 type KV struct {
-	Log  Log
-	Mem  SortedArray
-	Main SortedFile
+	Options KVOptions
+	Meta    KVMetaStore
+	Version uint64
+	Log     Log
+	Mem     SortedArray
+	Main    SortedFile
 	MultiClosers
 }
 
@@ -32,13 +42,36 @@ func (kv *KV) Open() (err error) {
 }
 
 func (kv *KV) openAll() error {
+	err := os.Mkdir(kv.Options.Dirpath, 0o755)
+	if err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+
+	if err := kv.openMeta(); err != nil {
+		return err
+	}
+
 	if err := kv.openLog(); err != nil {
 		return err
 	}
+
 	return kv.openSSTable()
 }
 
+func (kv *KV) openMeta() error {
+	kv.Meta.slots[0].FileName = path.Join(kv.Options.Dirpath, "meta0")
+	kv.Meta.slots[1].FileName = path.Join(kv.Options.Dirpath, "meta1")
+
+	if err := kv.Meta.Open(); err != nil {
+		return err
+	}
+
+	kv.MultiClosers = append(kv.MultiClosers, &kv.Meta)
+	return nil
+}
+
 func (kv *KV) openLog() error {
+	kv.Log.FileName = path.Join(kv.Options.Dirpath, "log")
 	if err := kv.Log.Open(); err != nil {
 		return err
 	}
@@ -81,7 +114,11 @@ func (kv *KV) openLog() error {
 }
 
 func (kv *KV) openSSTable() error {
-	if kv.Main.FileName != "" {
+	meta := kv.Meta.Get()
+	kv.Version = meta.Version
+
+	if meta.SSTable != "" {
+		kv.Main.FileName = path.Join(kv.Options.Dirpath, meta.SSTable)
 		if err := kv.Main.Open(); err != nil {
 			return err
 		}
@@ -166,36 +203,29 @@ func (kv *KV) Seek(key []byte) (SortedKVIter, error) {
 }
 
 func (kv *KV) Compact() error {
-	if kv.Main.FileName == "" {
-		panic("Storage FileName Error")
-	}
-
-	fp, err := os.CreateTemp(path.Dir(kv.Main.FileName), "tmp_sstable")
-	if err != nil {
-		return err
-	}
-
-	filename := fp.Name()
-	_ = fp.Close()
-	defer os.Remove(filename)
+	kv.Version++
+	sstable := fmt.Sprintf("sstable_%d", kv.Version)
+	filename := path.Join(kv.Options.Dirpath, sstable)
 
 	file := SortedFile{FileName: filename}
 	m := MergedSortedKV{&kv.Mem, &kv.Main}
 	if err := file.CreateFromSorted(m); err != nil {
+		_ = os.Remove(filename)
+		return err
+	}
+
+	meta := kv.Meta.Get()
+	meta.Version = kv.Version
+	meta.SSTable = sstable
+	if err := kv.Meta.Set(meta); err != nil {
+		_ = file.Close()
 		return err
 	}
 
 	_ = kv.Main.Close()
-	_ = file.Close()
-	if err := renameSync(file.FileName, kv.Main.FileName); err != nil {
-		_ = kv.Main.Open()
-		return err
-	}
+	_ = os.Remove(kv.Main.FileName)
 
-	if err = kv.Main.Open(); err != nil {
-		return err
-	}
-
+	kv.Main = file
 	kv.Mem.Clear()
 	return kv.Log.Truncate()
 }

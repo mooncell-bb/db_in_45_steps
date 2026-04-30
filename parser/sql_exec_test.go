@@ -19,13 +19,13 @@ func parseStmt(t *testing.T, s string) any {
 func TestExecStmt(t *testing.T) {
 	db := &database.DB{}
 	exec := &Exec{DB: db}
-	db.KV.Log.FileName = ".test_db"
-	defer os.Remove(".test_db")
+	db.KV.Options.Dirpath = "test_db_exec"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
 	exec.Open()
 	defer exec.Close()
 
-	os.Remove(".test_db")
+	os.RemoveAll(db.KV.Options.Dirpath)
 
 	s := "create table link (time int64, src string, dst string, primary key (src, dst));"
 	stmt := parseStmt(t, s)
@@ -60,12 +60,13 @@ func TestExecStmt(t *testing.T) {
 
 	db = &database.DB{}
 	exec = &Exec{DB: db}
-	db.KV.Log.FileName = ".test_db"
+	db.KV.Options.Dirpath = "test_db_exec"
 	exec.Open()
 	defer exec.Close()
 	require.Nil(t, err)
 
 	s = "delete from link where src = 'bob' and dst = 'alice';"
+	stmt = parseStmt(t, s)
 	stmt = parseStmt(t, s)
 	r, err = exec.ExecStmt(stmt)
 	require.Nil(t, err)
@@ -79,8 +80,8 @@ func TestExecStmt(t *testing.T) {
 
 	db2 := &database.DB{}
 	exec2 := &Exec{DB: db2}
-	db2.KV.Log.FileName = ".test_db"
-	os.Remove(".test_db")
+	db2.KV.Options.Dirpath = "test_db_exec2"
+	os.RemoveAll(db2.KV.Options.Dirpath)
 	exec2.Open()
 	defer exec2.Close()
 
@@ -117,13 +118,13 @@ func TestExecStmt(t *testing.T) {
 func TestRangeQueries(t *testing.T) {
 	db := &database.DB{}
 	exec := &Exec{DB: db}
-	db.KV.Log.FileName = ".test_db"
-	defer os.Remove(".test_db")
+	db.KV.Options.Dirpath = "test_db_range"
+	defer os.RemoveAll(db.KV.Options.Dirpath)
 
 	exec.Open()
 	defer exec.Close()
 
-	os.Remove(".test_db")
+	os.RemoveAll(db.KV.Options.Dirpath)
 
 	s := "create table t (k int64, v int64, primary key (k));"
 	stmt := parseStmt(t, s)
