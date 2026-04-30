@@ -2,8 +2,8 @@ package storage
 
 import (
 	"bytes"
+	"fmt"
 	"os"
-	"path"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,6 +84,46 @@ func TestKVBasic(t *testing.T) {
 	assert.True(t, !ok && err == nil)
 }
 
+func TestKVReopen(t *testing.T) {
+	path := "test_db"
+	defer os.RemoveAll(path)
+
+	for mode := 0; mode < 3; mode++ {
+		os.RemoveAll(path)
+		kv := KV{Options: KVOptions{Dirpath: path}}
+		err := kv.Open()
+		require.Nil(t, err)
+
+		N := 10
+		for i := 0; i < N; i++ {
+			key := []byte(fmt.Sprintf("data%d", i))
+			updated, err := kv.Set(key, key)
+			require.Nil(t, err)
+			require.True(t, updated)
+
+			if mode == 0 || mode == 1 {
+				err = kv.Compact()
+				require.Nil(t, err)
+			}
+			if mode == 1 || mode == 2 {
+				err = kv.Close()
+				require.Nil(t, err)
+				err = kv.Open()
+				require.Nil(t, err)
+			}
+
+			for j := 0; j < i; j++ {
+				key := []byte(fmt.Sprintf("data%d", j))
+				val, ok, err := kv.Get(key)
+				assert.True(t, err == nil && ok && string(val) == string(key))
+			}
+		}
+
+		err = kv.Close()
+		require.Nil(t, err)
+	}
+}
+
 func TestKVUpdateMode(t *testing.T) {
 	kv := KV{}
 	kv.Options.Dirpath = "test_db"
@@ -119,7 +159,6 @@ func TestKVUpdateMode(t *testing.T) {
 func TestKVRecovery(t *testing.T) {
 	kv := KV{}
 	kv.Options.Dirpath = "test_db"
-	defer os.RemoveAll(kv.Options.Dirpath)
 
 	prepare := func() {
 		os.RemoveAll(kv.Options.Dirpath)
@@ -135,36 +174,34 @@ func TestKVRecovery(t *testing.T) {
 	}
 
 	prepare()
-
-	logPath := path.Join(kv.Options.Dirpath, "log")
-	fp, _ := os.OpenFile(logPath, os.O_RDWR, 0o644)
+	// simulate truncated log
+	fp, _ := os.OpenFile(kv.Log.FileName, os.O_RDWR, 0o644)
 	st, _ := fp.Stat()
 	fp.Truncate(st.Size() - 1)
 	fp.Close()
-
+	// reopen
 	err := kv.Open()
 	assert.Nil(t, err)
-
+	// test
 	val, ok, err := kv.Get([]byte("k1"))
 	assert.True(t, string(val) == "v1" && ok && err == nil)
-	_, ok, err = kv.Get([]byte("k2"))
+	_, ok, err = kv.Get([]byte("k2")) // bad
 	assert.True(t, !ok && err == nil)
 	kv.Close()
 
 	prepare()
-
-	logPath = path.Join(kv.Options.Dirpath, "log")
-	fp, _ = os.OpenFile(logPath, os.O_RDWR, 0o644)
+	// simulate bad checksum
+	fp, _ = os.OpenFile(kv.Log.FileName, os.O_RDWR, 0o644)
 	st, _ = fp.Stat()
 	fp.WriteAt([]byte{0}, st.Size()-1)
 	fp.Close()
-
+	// reopen
 	err = kv.Open()
 	assert.Nil(t, err)
-
+	// test
 	val, ok, err = kv.Get([]byte("k1"))
 	assert.True(t, string(val) == "v1" && ok && err == nil)
-	_, ok, err = kv.Get([]byte("k2"))
+	_, ok, err = kv.Get([]byte("k2")) // bad
 	assert.True(t, !ok && err == nil)
 	kv.Close()
 }
@@ -206,6 +243,8 @@ func TestKVSeek(t *testing.T) {
 	for i := range keys {
 		_, _ = kv.Set([]byte(keys[i]), []byte(vals[i]))
 	}
+	// err = kv.Compact()
+	// require.Nil(t, err)
 
 	iter, err := kv.Seek([]byte("a"))
 	require.Nil(t, err)
@@ -227,20 +266,6 @@ func TestKVSeek(t *testing.T) {
 		err = iter.Prev()
 		require.Nil(t, err)
 	}
-	assert.False(t, iter.Valid())
-
-	iter, err = kv.Seek([]byte("f"))
-	require.Nil(t, err)
-	assert.True(t, iter.Valid())
-	assert.Equal(t, []byte("g"), iter.Key())
-
-	iter, err = kv.Seek([]byte("g"))
-	require.Nil(t, err)
-	assert.True(t, iter.Valid())
-	assert.Equal(t, []byte("g"), iter.Key())
-
-	iter, err = kv.Seek([]byte("h"))
-	require.Nil(t, err)
 	assert.False(t, iter.Valid())
 
 	iter, err = kv.Seek([]byte("f"))

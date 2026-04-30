@@ -62,16 +62,12 @@ func (file *SortedFile) CreateFromSorted(kv SortedKV) (err error) {
 }
 
 func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
-	var buf [8]byte
+	var buf [9]byte
 	nkeys := 0
 	offset := 8 + 8*kv.EstimatedSize()
 	iter, err := kv.Iter()
 
 	for ; err == nil && iter.Valid(); err = iter.Next() {
-		if iter.Deleted() {
-			continue
-		}
-
 		key, val := iter.Key(), iter.Val()
 
 		binary.LittleEndian.PutUint64(buf[:8], uint64(offset))
@@ -81,11 +77,16 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 
 		binary.LittleEndian.PutUint32(buf[0:4], uint32(len(key)))
 		binary.LittleEndian.PutUint32(buf[4:8], uint32(len(val)))
-		if _, err = file.fp.WriteAt(buf[:8], int64(offset)); err != nil {
+		if iter.Deleted() {
+			buf[8] = 1
+		} else {
+			buf[8] = 0
+		}
+		if _, err = file.fp.WriteAt(buf[:9], int64(offset)); err != nil {
 			return err
 		}
 
-		offset += 8
+		offset += 9
 		if _, err = file.fp.WriteAt(key, int64(offset)); err != nil {
 			return err
 		}
@@ -116,29 +117,34 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 	return file.fp.Sync()
 }
 
-func (file *SortedFile) index(pos int) (key []byte, val []byte, err error) {
-	var buf [8]byte
+func (file *SortedFile) index(pos int) (key []byte, val []byte, deleted bool, err error) {
+	if pos < 0 || pos >= file.nkeys {
+		panic("SortedFile pos Error")
+	}
+
+	var buf [9]byte
 	if _, err = file.fp.ReadAt(buf[:], int64(8+8*pos)); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
-	offset := int64(binary.LittleEndian.Uint64(buf[:]))
+	offset := int64(binary.LittleEndian.Uint64(buf[:8]))
 	if int64(8+8*file.nkeys) > offset {
-		return nil, nil, errors.New("corrupted file")
+		return nil, nil, false, errors.New("corrupted file")
 	}
 
-	if _, err = file.fp.ReadAt(buf[:], offset); err != nil {
-		return nil, nil, nil
+	if _, err = file.fp.ReadAt(buf[:9], offset); err != nil {
+		return nil, nil, false, err
 	}
 
 	klen := binary.LittleEndian.Uint32(buf[0:4])
 	vlen := binary.LittleEndian.Uint32(buf[4:8])
 	data := make([]byte, klen+vlen)
-	if _, err = file.fp.ReadAt(data, offset+8); err != nil {
-		return nil, nil, err
+	if _, err = file.fp.ReadAt(data, offset+9); err != nil {
+		return nil, nil, false, err
 	}
 
-	return data[:klen], data[klen:], nil
+	deleted = buf[8] != 0
+	return data[:klen], data[klen:], deleted, nil
 }
 
 func (file *SortedFile) findPos(target []byte) (int, error) {
@@ -146,7 +152,7 @@ func (file *SortedFile) findPos(target []byte) (int, error) {
 	for lo < hi {
 		mid := lo + (hi-lo)/2
 
-		key, _, err := file.index(mid)
+		key, _, _, err := file.index(mid)
 		if err != nil {
 			return -1, err
 		}
@@ -169,10 +175,11 @@ func (file *SortedFile) EstimatedSize() int {
 }
 
 type SortedFileIter struct {
-	file *SortedFile
-	pos  int
-	key  []byte
-	val  []byte
+	file    *SortedFile
+	pos     int
+	key     []byte
+	val     []byte
+	deleted bool
 }
 
 func (file *SortedFile) Seek(key []byte) (SortedKVIter, error) {
@@ -200,7 +207,7 @@ func (file *SortedFile) Iter() (SortedKVIter, error) {
 
 func (iter *SortedFileIter) loadCurrent() (err error) {
 	if iter.Valid() {
-		iter.key, iter.val, err = iter.file.index(iter.pos)
+		iter.key, iter.val, iter.deleted, err = iter.file.index(iter.pos)
 	}
 
 	return err
@@ -235,5 +242,5 @@ func (iter *SortedFileIter) Prev() error {
 }
 
 func (iter *SortedFileIter) Deleted() bool {
-	return false
+	return iter.deleted
 }

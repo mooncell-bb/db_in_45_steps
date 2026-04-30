@@ -29,7 +29,7 @@ type KV struct {
 	Version uint64
 	Log     Log
 	Mem     SortedArray
-	Main    SortedFile
+	Main    []SortedFile
 	MultiClosers
 }
 
@@ -116,14 +116,16 @@ func (kv *KV) openLog() error {
 func (kv *KV) openSSTable() error {
 	meta := kv.Meta.Get()
 	kv.Version = meta.Version
+	kv.Main = kv.Main[:0]
 
-	if meta.SSTable != "" {
-		kv.Main.FileName = path.Join(kv.Options.Dirpath, meta.SSTable)
-		if err := kv.Main.Open(); err != nil {
+	for _, sstable := range meta.SSTables {
+		sstable = path.Join(kv.Options.Dirpath, sstable)
+		file := SortedFile{FileName: sstable}
+		if err := file.Open(); err != nil {
 			return err
 		}
-
-		kv.MultiClosers = append(kv.MultiClosers, &kv.Main)
+		kv.MultiClosers = append(kv.MultiClosers, &file)
+		kv.Main = append(kv.Main, file)
 	}
 
 	return nil
@@ -192,9 +194,12 @@ func (kv *KV) Del(key []byte) (deleted bool, err error) {
 }
 
 func (kv *KV) Seek(key []byte) (SortedKVIter, error) {
-	m := MergedSortedKV{&kv.Mem, &kv.Main}
+	levels := MergedSortedKV{&kv.Mem}
+	for i := range kv.Main {
+		levels = append(levels, &kv.Main[i])
+	}
 
-	iter, err := m.Seek(key)
+	iter, err := levels.Seek(key)
 	if err != nil {
 		return nil, err
 	}
@@ -208,24 +213,20 @@ func (kv *KV) Compact() error {
 	filename := path.Join(kv.Options.Dirpath, sstable)
 
 	file := SortedFile{FileName: filename}
-	m := MergedSortedKV{&kv.Mem, &kv.Main}
-	if err := file.CreateFromSorted(m); err != nil {
+	if err := file.CreateFromSorted(&kv.Mem); err != nil {
 		_ = os.Remove(filename)
 		return err
 	}
 
 	meta := kv.Meta.Get()
 	meta.Version = kv.Version
-	meta.SSTable = sstable
+	meta.SSTables = slices.Insert(meta.SSTables, 0, sstable)
 	if err := kv.Meta.Set(meta); err != nil {
 		_ = file.Close()
 		return err
 	}
 
-	_ = kv.Main.Close()
-	_ = os.Remove(kv.Main.FileName)
-
-	kv.Main = file
+	kv.Main = slices.Insert(kv.Main, 0, file)
 	kv.Mem.Clear()
 	return kv.Log.Truncate()
 }

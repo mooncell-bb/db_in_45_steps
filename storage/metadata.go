@@ -22,7 +22,7 @@ type KVMetaItem struct {
 
 type KVMetaData struct {
 	Version uint64
-	SSTable string
+	SSTables []string
 }
 
 func readMetaFile(fp *os.File) (data KVMetaData, err error) {
