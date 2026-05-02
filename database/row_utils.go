@@ -22,12 +22,12 @@ func LookupColumns(cols []Column, names []string) (indices []int, err error) {
 }
 
 func MakePKey(schema *Schema, pkey []NamedCell) (Row, error) {
-	if len(schema.PKey) != len(pkey) {
+	if len(schema.Indices[0]) != len(pkey) {
 		return nil, errors.New("not primary key")
 	}
 
 	row := schema.NewRow()
-	for _, idx1 := range schema.PKey {
+	for _, idx1 := range schema.Indices[0] {
 		col := schema.Cols[idx1]
 
 		idx2 := slices.IndexFunc(pkey, func(expr NamedCell) bool {
@@ -50,7 +50,7 @@ func FillNonPKey(schema *Schema, updates []NamedCell, out Row) error {
 			return col.Name == expr.Column && col.Type == expr.Value.Type
 		})
 
-		if idx < 0 || slices.Contains(schema.PKey, idx) {
+		if idx < 0 || slices.Contains(schema.Indices[0], idx) {
 			return errors.New("cannot update column")
 		}
 
@@ -69,11 +69,11 @@ func SubsetRow(row Row, indices []int) (out Row) {
 }
 
 func ExtractPKey(schema *Schema, pkey []NamedCell) (cells []Cell, ok bool) {
-	if len(schema.PKey) != len(pkey) {
+	if len(schema.Indices[0]) != len(pkey) {
 		return nil, false
 	}
 
-	for _, idx := range schema.PKey {
+	for _, idx := range schema.Indices[0] {
 		col := schema.Cols[idx]
 
 		i := slices.IndexFunc(pkey, func(e NamedCell) bool {
@@ -91,12 +91,12 @@ func ExtractPKey(schema *Schema, pkey []NamedCell) (cells []Cell, ok bool) {
 }
 
 func IsPKeyPrefix(schema *Schema, cols []string, cells []Cell) bool {
-	if len(cols) != len(cells) || len(cols) > len(schema.PKey) {
+	if len(cols) != len(cells) || len(cols) > len(schema.Indices[0]) {
 		return false
 	}
 
 	for i := range cols {
-		col := schema.Cols[schema.PKey[i]]
+		col := schema.Cols[schema.Indices[0][i]]
 
 		if col.Name != cols[i] || col.Type != cells[i].Type {
 			return false

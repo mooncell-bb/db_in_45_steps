@@ -25,9 +25,10 @@ type StmtSelect struct {
 }
 
 type StmtCreatTable struct {
-	table string
-	cols  []database.Column
-	pkey  []string
+	table   string
+	cols    []database.Column
+	pkey    []string
+	indices [][]string
 }
 
 type StmtInsert struct {
@@ -438,6 +439,18 @@ func (p *Parser) parseCreateTableItem(out *StmtCreatTable) error {
 				return p.parseNameItem(&out.pkey)
 			},
 		)
+	} else if p.tryKeyword("INDEX") {
+		index := []string{}
+		err := p.parseCommaList(
+			func() error {
+				return p.parseNameItem(&index)
+			},
+		)
+		if err == nil {
+			out.indices = append(out.indices, index)
+		}
+
+		return err
 	}
 
 	col := database.Column{}

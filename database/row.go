@@ -6,9 +6,9 @@ import (
 )
 
 type Schema struct {
-	Table string
-	Cols  []Column
-	PKey  []int
+	Table   string
+	Cols    []Column
+	Indices [][]int
 }
 
 type Column struct {
@@ -29,7 +29,7 @@ func (row Row) EncodeKey(schema *Schema) (key []byte) {
 
 	key = append([]byte(schema.Table), 0x00)
 
-	for _, idx := range schema.PKey {
+	for _, idx := range schema.Indices[0] {
 		cell := row[idx]
 		if cell.Type != schema.Cols[idx].Type {
 			panic("cell type mismatch")
@@ -52,7 +52,7 @@ func (row Row) EncodeVal(schema *Schema) (val []byte) {
 			panic("cell type mismatch")
 		}
 
-		if !slices.Contains(schema.PKey, idx) {
+		if !slices.Contains(schema.Indices[0], idx) {
 			val = cell.EncodeVal(val)
 		}
 	}
@@ -83,7 +83,7 @@ func (row Row) DecodeKey(schema *Schema, key []byte) (err error) {
 
 	key = key[len(schema.Table)+1:]
 
-	for _, idx := range schema.PKey {
+	for _, idx := range schema.Indices[0] {
 		col := schema.Cols[idx]
 		if len(key) == 0 {
 			return ErrDataLen
@@ -114,7 +114,7 @@ func (row Row) DecodeVal(schema *Schema, val []byte) (err error) {
 	}
 
 	for idx, col := range schema.Cols {
-		if slices.Contains(schema.PKey, idx) {
+		if slices.Contains(schema.Indices[0], idx) {
 			continue
 		}
 
@@ -133,13 +133,13 @@ func (row Row) DecodeVal(schema *Schema, val []byte) (err error) {
 }
 
 func EncodeKeyPrefix(schema *Schema, prefix []Cell, positive bool) []byte {
-	if len(prefix) > len(schema.PKey) {
+	if len(prefix) > len(schema.Indices[0]) {
 		panic("mismatch between key prefix and schema")
 	}
 
 	key := append([]byte(schema.Table), 0x00)
 	for idx, cell := range prefix {
-		if cell.Type != schema.Cols[schema.PKey[idx]].Type {
+		if cell.Type != schema.Cols[schema.Indices[0][idx]].Type {
 			panic("cell type mismatch")
 		}
 

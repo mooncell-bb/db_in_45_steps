@@ -53,16 +53,28 @@ func (exec *Exec) execCreateTable(stmt *StmtCreatTable) (err error) {
 		Table: stmt.table,
 		Cols:  stmt.cols,
 	}
+	for i, names := range append([][]string{stmt.pkey}, stmt.indices...) {
+		index, err := database.LookupColumns(stmt.cols, names)
+		if err != nil {
+			return err
+		}
+		if i > 0 {
+			index = AddPKeyToIndex(index, schema.Indices[0])
+		}
 
-	if schema.PKey, err = database.LookupColumns(stmt.cols, stmt.pkey); err != nil {
-		return err
+		schema.Indices = append(schema.Indices, index)
 	}
 
 	val, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+
 	if _, err = exec.DB.KV.Set([]byte("@schema_"+stmt.table), val); err != nil {
 		return err
 	}
 
+	exec.DB.Tables[schema.Table] = schema
 	return nil
 }
 

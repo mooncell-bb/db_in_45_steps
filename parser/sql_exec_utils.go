@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/mooncell-bb/db_in_45_steps/database"
 )
@@ -195,4 +196,14 @@ func MakeRange(schema *database.Schema, cond any) (*database.RangeReq, error) {
 	}
 
 	return nil, errors.New("unimplemented WHERE")
+}
+
+func AddPKeyToIndex(index []int, pkey []int) []int {
+	for _, idx := range pkey {
+		if !slices.Contains(index, idx) {
+			index = append(index, idx)
+		}
+	}
+
+	return index
 }

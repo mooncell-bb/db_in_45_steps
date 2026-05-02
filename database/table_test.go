@@ -26,7 +26,7 @@ func TestTableByPKey(t *testing.T) {
 			{Name: "src", Type: TypeStr},
 			{Name: "dst", Type: TypeStr},
 		},
-		PKey: []int{1, 2}, // (src, dst)
+		Indices: [][]int{{1, 2}}, // (src, dst)
 	}
 
 	row := Row{
@@ -81,7 +81,7 @@ func TestTableUpsert(t *testing.T) {
 			{Name: "src", Type: TypeStr},
 			{Name: "dst", Type: TypeStr},
 		},
-		PKey: []int{1, 2},
+		Indices: [][]int{{1, 2}},
 	}
 
 	row := Row{
@@ -130,7 +130,7 @@ func TestTableUpdateMode(t *testing.T) {
 			{Name: "src", Type: TypeStr},
 			{Name: "dst", Type: TypeStr},
 		},
-		PKey: []int{1, 2},
+		Indices: [][]int{{1, 2}},
 	}
 
 	row := Row{
@@ -177,7 +177,7 @@ func TestIterByPKey(t *testing.T) {
 			{Name: "k", Type: TypeI64},
 			{Name: "v", Type: TypeI64},
 		},
-		PKey: []int{0},
+		Indices: [][]int{{0}},
 	}
 
 	N := int64(10)
@@ -313,7 +313,7 @@ func TestIteratorValid(t *testing.T) {
 			{Name: "id", Type: TypeI64},
 			{Name: "val", Type: TypeStr},
 		},
-		PKey: []int{0},
+		Indices: [][]int{{0}},
 	}
 
 	// Insert some test data
@@ -370,7 +370,7 @@ func TestIteratorRow(t *testing.T) {
 			{Name: "name", Type: TypeStr},
 			{Name: "age", Type: TypeI64},
 		},
-		PKey: []int{0},
+		Indices: [][]int{{0}},
 	}
 
 	testData := []Row{
@@ -420,7 +420,7 @@ func TestIteratorNext(t *testing.T) {
 			{Name: "id", Type: TypeI64},
 			{Name: "val", Type: TypeI64},
 		},
-		PKey: []int{0},
+		Indices: [][]int{{0}},
 	}
 
 	// Insert test data: 0, 10, 20, 30, 40

@@ -96,8 +96,8 @@ type RowIterator struct {
 }
 
 func (db *DB) Seek(schema *Schema, row Row) (*RowIterator, error) {
-	start := make([]Cell, len(schema.PKey))
-	for i, idx := range schema.PKey {
+	start := make([]Cell, len(schema.Indices[0]))
+	for i, idx := range schema.Indices[0] {
 		if row[idx].Type != schema.Cols[idx].Type {
 			panic("cell type mismatch")
 		}

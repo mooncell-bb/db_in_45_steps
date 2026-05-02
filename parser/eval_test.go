@@ -46,7 +46,7 @@ func TestEval(t *testing.T) {
 			{Name: "c", Type: database.TypeI64},
 			{Name: "d", Type: database.TypeI64},
 		},
-		PKey: []int{0},
+		Indices: [][]int{{0}},
 	}
 
 	row := makeRow("A", "B", 3, 4)

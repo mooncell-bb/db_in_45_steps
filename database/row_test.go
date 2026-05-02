@@ -15,7 +15,7 @@ func TestRowEncode(t *testing.T) {
 			{Name: "src", Type: TypeStr},
 			{Name: "dst", Type: TypeStr},
 		},
-		PKey: []int{2, 1}, // (dst, src)
+		Indices: [][]int{{2, 1}}, // (dst, src)
 	}
 
 	row := Row{
@@ -69,9 +69,9 @@ func TestRowEncode(t *testing.T) {
 
 func TestRowEncodePanicsOnSchemaMismatch(t *testing.T) {
 	schema := &Schema{
-		Table: "t1",
-		Cols:  []Column{{Name: "c1", Type: TypeI64}},
-		PKey:  []int{0},
+		Table:   "t1",
+		Cols:    []Column{{Name: "c1", Type: TypeI64}},
+		Indices: [][]int{{0}},
 	}
 
 	row := Row{}
@@ -81,9 +81,9 @@ func TestRowEncodePanicsOnSchemaMismatch(t *testing.T) {
 
 func TestRowEncodePanicsOnTypeMismatch(t *testing.T) {
 	schema := &Schema{
-		Table: "t1",
-		Cols:  []Column{{Name: "c1", Type: TypeI64}},
-		PKey:  []int{0},
+		Table:   "t1",
+		Cols:    []Column{{Name: "c1", Type: TypeI64}},
+		Indices: [][]int{{0}},
 	}
 
 	row := Row{Cell{Type: TypeStr, Str: []byte("x")}}
@@ -99,7 +99,7 @@ func TestRowDecodeKeyErrors(t *testing.T) {
 			{Name: "src", Type: TypeStr},
 			{Name: "dst", Type: TypeStr},
 		},
-		PKey: []int{1, 2},
+		Indices: [][]int{{1, 2}},
 	}
 
 	row := schema.NewRow()
@@ -121,7 +121,7 @@ func TestRowDecodeValErrors(t *testing.T) {
 			{Name: "src", Type: TypeStr},
 			{Name: "dst", Type: TypeStr},
 		},
-		PKey: []int{1, 2},
+		Indices: [][]int{{1, 2}},
 	}
 
 	row := schema.NewRow()
