@@ -46,3 +46,15 @@ func FilterDeleted(iter SortedKVIter) (SortedKVIter, error) {
 
 	return NoDeletedIter{iter}, nil
 }
+
+type NoDeletedSortedKV struct {
+	SortedKV
+}
+
+func (kv NoDeletedSortedKV) Iter() (iter SortedKVIter, err error) {
+	if iter, err = kv.SortedKV.Iter(); err != nil {
+		return nil, err
+	}
+
+	return NoDeletedIter{iter}, nil
+}

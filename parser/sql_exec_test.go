@@ -81,6 +81,7 @@ func TestExecStmt(t *testing.T) {
 	db2 := &database.DB{}
 	exec2 := &Exec{DB: db2}
 	db2.KV.Options.Dirpath = "test_db_exec2"
+	defer os.RemoveAll(db2.KV.Options.Dirpath)
 	os.RemoveAll(db2.KV.Options.Dirpath)
 	exec2.Open()
 	defer exec2.Close()

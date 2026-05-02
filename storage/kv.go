@@ -20,7 +20,9 @@ const (
 )
 
 type KVOptions struct {
-	Dirpath string
+	Dirpath      string
+	LogShreshold int
+	GrowthFactor float32
 }
 
 type KV struct {
@@ -120,12 +122,12 @@ func (kv *KV) openSSTable() error {
 
 	for _, sstable := range meta.SSTables {
 		sstable = path.Join(kv.Options.Dirpath, sstable)
-		file := SortedFile{FileName: sstable}
+		file := &SortedFile{FileName: sstable}
 		if err := file.Open(); err != nil {
 			return err
 		}
-		kv.MultiClosers = append(kv.MultiClosers, &file)
-		kv.Main = append(kv.Main, file)
+		kv.MultiClosers = append(kv.MultiClosers, file)
+		kv.Main = append(kv.Main, *file)
 	}
 
 	return nil
@@ -208,12 +210,37 @@ func (kv *KV) Seek(key []byte) (SortedKVIter, error) {
 }
 
 func (kv *KV) Compact() error {
+	if kv.Mem.Size() >= kv.Options.LogShreshold {
+		if err := kv.compactLog(); err != nil {
+			return err
+		}
+	}
+
+	for i := 0; i < len(kv.Main)-1; i++ {
+		if kv.shouldMerge(i) {
+			if err := kv.compactSSTable(i); err != nil {
+				return err
+			}
+			i--
+			continue
+		}
+	}
+
+	return nil
+}
+
+func (kv *KV) compactLog() error {
 	kv.Version++
 	sstable := fmt.Sprintf("sstable_%d", kv.Version)
 	filename := path.Join(kv.Options.Dirpath, sstable)
 
-	file := SortedFile{FileName: filename}
-	if err := file.CreateFromSorted(&kv.Mem); err != nil {
+	file := &SortedFile{FileName: filename}
+	m := SortedKV(&kv.Mem)
+	if len(kv.Main) == 0 {
+		m = NoDeletedSortedKV{m}
+	}
+
+	if err := file.CreateFromSorted(m); err != nil {
 		_ = os.Remove(filename)
 		return err
 	}
@@ -226,9 +253,56 @@ func (kv *KV) Compact() error {
 		return err
 	}
 
-	kv.Main = slices.Insert(kv.Main, 0, file)
+	kv.Main = slices.Insert(kv.Main, 0, *file)
+	kv.MultiClosers = append(kv.MultiClosers, file)
 	kv.Mem.Clear()
 	return kv.Log.Truncate()
+}
+
+func (kv *KV) shouldMerge(idx int) bool {
+	if !(idx >= 0 && idx <= len(kv.Main)-2) {
+		return false
+	}
+
+	cur, next := kv.Main[idx].EstimatedSize(), kv.Main[idx+1].EstimatedSize()
+	return float32(cur)*kv.Options.GrowthFactor >= float32(cur+next)
+}
+
+func (kv *KV) compactSSTable(level int) error {
+	if !(level >= 0 && level <= len(kv.Main)-2) {
+		return errors.New("Level Error")
+	}
+
+	kv.Version++
+	sstable := fmt.Sprintf("sstable_%d", kv.Version)
+	filename := path.Join(kv.Options.Dirpath, sstable)
+
+	file := &SortedFile{FileName: filename}
+	m := SortedKV(MergedSortedKV{&kv.Main[level], &kv.Main[level+1]})
+	if len(kv.Main) == level+2 {
+		m = NoDeletedSortedKV{m}
+	}
+
+	if err := file.CreateFromSorted(m); err != nil {
+		_ = os.Remove(filename)
+		return err
+	}
+
+	meta := kv.Meta.Get()
+	meta.Version = kv.Version
+	meta.SSTables = slices.Replace(meta.SSTables, level, level+2, sstable)
+	if err := kv.Meta.Set(meta); err != nil {
+		_ = file.Close()
+		return err
+	}
+
+	old1, old2 := kv.Main[level].FileName, kv.Main[level+1].FileName
+	kv.Main = slices.Replace(kv.Main, level, level+2, *file)
+	kv.MultiClosers = append(kv.MultiClosers, file)
+	_ = os.Remove(old1)
+	_ = os.Remove(old2)
+
+	return nil
 }
 
 type RangedKVIter struct {
