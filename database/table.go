@@ -1,6 +1,7 @@
 package database
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 
@@ -22,7 +23,7 @@ func (db *DB) Close() error {
 }
 
 func (db *DB) Select(schema *Schema, row Row) (ok bool, err error) {
-	key := row.EncodeKey(schema)
+	key := row.EncodeKey(schema, 0)
 
 	val, ok, err := db.KV.Get(key)
 
@@ -38,30 +39,78 @@ func (db *DB) Select(schema *Schema, row Row) (ok bool, err error) {
 }
 
 func (db *DB) Insert(schema *Schema, row Row) (updated bool, err error) {
-	key := row.EncodeKey(schema)
-	val := row.EncodeVal(schema)
-
-	return db.KV.SetEx(key, val, storage.ModeInsert)
+	return db.update(schema, row, storage.ModeInsert)
 }
 
 func (db *DB) Upsert(schema *Schema, row Row) (updated bool, err error) {
-	key := row.EncodeKey(schema)
-	val := row.EncodeVal(schema)
-
-	return db.KV.SetEx(key, val, storage.ModeUpsert)
+	return db.update(schema, row, storage.ModeUpsert)
 }
 
 func (db *DB) Update(schema *Schema, row Row) (updated bool, err error) {
-	key := row.EncodeKey(schema)
+	return db.update(schema, row, storage.ModeUpdate)
+}
+
+func (db *DB) update(schema *Schema, row Row, mode storage.UpdateMode) (updated bool, err error) {
+	key := row.EncodeKey(schema, 0)
 	val := row.EncodeVal(schema)
 
-	return db.KV.SetEx(key, val, storage.ModeUpdate)
+	oldVal, exist, err := db.KV.Get(key)
+	if err != nil {
+		return false, err
+	}
+
+	switch mode {
+	case storage.ModeUpsert:
+		updated = !exist || !bytes.Equal(oldVal, val)
+	case storage.ModeInsert:
+		updated = !exist
+	case storage.ModeUpdate:
+		updated = exist && !bytes.Equal(oldVal, val)
+	default:
+		panic("unreachable")
+	}
+	if !updated {
+		return false, nil
+	}
+
+	if exist {
+		oldRow := row.CopyRow()
+		if err = oldRow.DecodeVal(schema, oldVal); err != nil {
+			return false, err
+		}
+
+		if _, err = db.Delete(schema, oldRow); err != nil {
+			return false, err
+		}
+	}
+
+	for i := 0; i < len(schema.Indices) && err == nil; i++ {
+		if i > 0 {
+			key, val = row.EncodeKey(schema, i), nil
+		}
+
+		updated, err = db.KV.SetEx(key, val, storage.ModeInsert)
+		if err == nil && !updated {
+			panic("impossible")
+		}
+	}
+
+	return updated, err
 }
 
 func (db *DB) Delete(schema *Schema, row Row) (deleted bool, err error) {
-	key := row.EncodeKey(schema)
+	for i := 0; i < len(schema.Indices) && err == nil; i++ {
+		key := row.EncodeKey(schema, i)
+		deleted, err = db.KV.Del(key)
+		if err == nil && !deleted {
+			if i != 0 {
+				return false, errors.New("inconsistent index")
+			}
+			break
+		}
+	}
 
-	return db.KV.Del(key)
+	return deleted, err
 }
 
 func (db *DB) GetSchema(table string) (Schema, error) {
@@ -119,8 +168,8 @@ func (db *DB) Range(schema *Schema, req *RangeReq) (*RowIterator, error) {
 		panic("operator conflict")
 	}
 
-	start := EncodeKeyPrefix(schema, req.Start, SuffixPositive(req.StartCmp))
-	stop := EncodeKeyPrefix(schema, req.Stop, SuffixPositive(req.StopCmp))
+	start := EncodeKeyPrefix(schema, 0, req.Start, SuffixPositive(req.StartCmp))
+	stop := EncodeKeyPrefix(schema, 0, req.Stop, SuffixPositive(req.StopCmp))
 
 	iter, err := db.KV.Range(start, stop, startDescending)
 	if err != nil {
@@ -158,7 +207,7 @@ func decodeKVIter(schema *Schema, iter *storage.RangedKVIter, row Row) (bool, er
 		return false, nil
 	}
 
-	if err := row.DecodeKey(schema, iter.Key()); err == ErrOutOfRange {
+	if err := row.DecodeKey(schema, 0, iter.Key()); err == ErrOutOfRange {
 		return false, nil
 	} else if err != nil {
 		return false, err

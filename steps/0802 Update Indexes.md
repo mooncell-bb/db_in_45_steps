@@ -1,27 +1,8 @@
-package database
+不同索引的键必须保持唯一性，因此需添加 indexNo 参数并将其编码至键中。
 
-import (
-	"errors"
-	"slices"
-)
+- func (row Row) EncodeKey(schema *Schema, indexNo int) (key []byte)
 
-type Schema struct {
-	Table   string
-	Cols    []Column
-	Indices [][]int
-}
-
-type Column struct {
-	Name string
-	Type CellType
-}
-
-type Row []Cell
-
-func (schema *Schema) NewRow() Row {
-	return make(Row, len(schema.Cols))
-}
-
+```go
 func (row Row) EncodeKey(schema *Schema, indexNo int) (key []byte) {
 	if len(row) != len(schema.Cols) {
 		panic("mismatch between row data and schema")
@@ -41,27 +22,11 @@ func (row Row) EncodeKey(schema *Schema, indexNo int) (key []byte) {
 
 	return append(key, 0x00)
 }
+```
 
-func (row Row) EncodeVal(schema *Schema) (val []byte) {
-	if len(row) != len(schema.Cols) {
-		panic("mismatch between row data and schema")
-	}
+- func (row Row) DecodeKey(schema *Schema, indexNo int, key []byte) (err error)
 
-	for idx, cell := range row {
-		if cell.Type != schema.Cols[idx].Type {
-			panic("cell type mismatch")
-		}
-
-		if !slices.Contains(schema.Indices[0], idx) {
-			val = cell.EncodeVal(val)
-		}
-	}
-
-	return val
-}
-
-var ErrOutOfRange = errors.New("out of range")
-
+```go
 func (row Row) DecodeKey(schema *Schema, indexNo int, key []byte) (err error) {
 	if len(row) != len(schema.Cols) {
 		panic("mismatch between row data and schema")
@@ -100,31 +65,11 @@ func (row Row) DecodeKey(schema *Schema, indexNo int, key []byte) (err error) {
 
 	return nil
 }
+```
 
-func (row Row) DecodeVal(schema *Schema, val []byte) (err error) {
-	if len(row) != len(schema.Cols) {
-		panic("mismatch between row data and schema")
-	}
+- func EncodeKeyPrefix(schema *Schema, indexNo int, prefix []Cell, positive bool) []byte
 
-	for idx, col := range schema.Cols {
-		if slices.Contains(schema.Indices[0], idx) {
-			continue
-		}
-
-		row[idx] = Cell{Type: col.Type}
-
-		if val, err = row[idx].DecodeVal(val); err != nil {
-			return err
-		}
-	}
-
-	if len(val) != 0 {
-		return errors.New("trailing garbage")
-	}
-
-	return nil
-}
-
+```go
 func EncodeKeyPrefix(schema *Schema, indexNo int, prefix []Cell, positive bool) []byte {
 	if len(prefix) > len(schema.Indices[0]) {
 		panic("mismatch between key prefix and schema")
@@ -146,19 +91,10 @@ func EncodeKeyPrefix(schema *Schema, indexNo int, prefix []Cell, positive bool) 
 
 	return key
 }
+```
 
-func (src Row) CopyRow() Row {
-	dst := make(Row, len(src))
+在进行 INSERT、UPDATE 和 DELETE 操作时，需要更新或移除索引键：
 
-	for i, cell := range src {
-		dst[i].Type = cell.Type
-		dst[i].I64 = cell.I64
-
-		if cell.Str != nil {
-			dst[i].Str = make([]byte, len(cell.Str))
-			copy(dst[i].Str, cell.Str)
-		}
-	}
-
-	return dst
-}
+1. INSERT 添加记录时，插入索引键。
+2. DELETE 删除记录时，需同时删除索引键。
+3. UPDATE 更新现有记录时，可能需要移除旧的索引键。

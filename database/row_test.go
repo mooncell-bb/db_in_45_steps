@@ -23,13 +23,13 @@ func TestRowEncode(t *testing.T) {
 		Cell{Type: TypeStr, Str: []byte("a")},
 		Cell{Type: TypeStr, Str: []byte("b")},
 	}
-	key := []byte{'l', 'i', 'n', 'k', 0, byte(TypeStr), 'b', 0, byte(TypeStr), 'a', 0, 0}
+	key := []byte{'l', 'i', 'n', 'k', 0, 0, byte(TypeStr), 'b', 0, byte(TypeStr), 'a', 0, 0}
 	val := []byte{123, 0, 0, 0, 0, 0, 0, 0}
-	assert.Equal(t, key, row.EncodeKey(schema))
+	assert.Equal(t, key, row.EncodeKey(schema, 0))
 	assert.Equal(t, val, row.EncodeVal(schema))
 
 	decoded := schema.NewRow()
-	err := decoded.DecodeKey(schema, key)
+	err := decoded.DecodeKey(schema, 0, key)
 	assert.Nil(t, err)
 	err = decoded.DecodeVal(schema, val)
 	assert.Nil(t, err)
@@ -54,11 +54,11 @@ func TestRowEncode(t *testing.T) {
 	}
 	keys := []string{}
 	for _, row = range rows {
-		key = row.EncodeKey(schema)
+		key = row.EncodeKey(schema, 0)
 		keys = append(keys, string(key))
 
 		decoded = schema.NewRow()
-		err = decoded.DecodeKey(schema, key)
+		err = decoded.DecodeKey(schema, 0, key)
 		assert.Nil(t, err)
 		err = decoded.DecodeVal(schema, val)
 		assert.Nil(t, err)
@@ -75,7 +75,7 @@ func TestRowEncodePanicsOnSchemaMismatch(t *testing.T) {
 	}
 
 	row := Row{}
-	assert.Panics(t, func() { _ = row.EncodeKey(schema) })
+	assert.Panics(t, func() { _ = row.EncodeKey(schema, 0) })
 	assert.Panics(t, func() { _ = row.EncodeVal(schema) })
 }
 
@@ -87,7 +87,7 @@ func TestRowEncodePanicsOnTypeMismatch(t *testing.T) {
 	}
 
 	row := Row{Cell{Type: TypeStr, Str: []byte("x")}}
-	assert.Panics(t, func() { _ = row.EncodeKey(schema) })
+	assert.Panics(t, func() { _ = row.EncodeKey(schema, 0) })
 	assert.Panics(t, func() { _ = row.EncodeVal(schema) })
 }
 
@@ -104,12 +104,12 @@ func TestRowDecodeKeyErrors(t *testing.T) {
 
 	row := schema.NewRow()
 
-	_, err := func() (bool, error) { return false, row.DecodeKey(schema, []byte("wrong")) }()
+	_, err := func() (bool, error) { return false, row.DecodeKey(schema, 0, []byte("wrong")) }()
 	assert.Error(t, err)
 
 	// trailing garbage
-	badKey := append([]byte("link\x00"), []byte{1, 0, 0, 0, 'a', 1, 0, 0, 0, 'b', 0xff}...)
-	err = row.DecodeKey(schema, badKey)
+	badKey := append([]byte("link\x00\x00"), []byte{byte(TypeStr), 'a', 0, byte(TypeStr), 'b', 0, 0xff}...)
+	err = row.DecodeKey(schema, 0, badKey)
 	assert.Error(t, err)
 }
 
