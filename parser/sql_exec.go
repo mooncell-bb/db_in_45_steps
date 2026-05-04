@@ -149,9 +149,16 @@ func (exec *Exec) execUpdate(stmt *StmtUpdate) (count int, err error) {
 		return 0, err
 	}
 
+	oldRows := []database.Row{}
 	for ; err == nil && iter.Valid(); err = iter.Next() {
-		row := iter.Row()
+		oldRows = append(oldRows, iter.Row().CopyRow())
+	}
 
+	if err != nil {
+		return 0, nil
+	}
+
+	for _, row := range oldRows {
 		updates := make([]database.NamedCell, len(stmt.value))
 		for i, assign := range stmt.value {
 			cell, err := evalExpr(&schema, row, assign.expr)
@@ -173,10 +180,6 @@ func (exec *Exec) execUpdate(stmt *StmtUpdate) (count int, err error) {
 		if updated {
 			count++
 		}
-	}
-
-	if err != nil {
-		return 0, err
 	}
 
 	return count, nil

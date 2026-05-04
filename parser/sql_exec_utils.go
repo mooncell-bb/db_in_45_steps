@@ -95,19 +95,29 @@ func MatchCmp(cond any) (database.ExprOp, []string, []database.Cell, bool) {
 }
 
 func MatchRange(schema *database.Schema, cond any) (*database.RangeReq, bool) {
+	for indexNo := range schema.Indices {
+		if req, ok := MatchRangeByIndex(schema, indexNo, cond); ok {
+			return req, ok
+		}
+	}
+
+	return nil, false
+}
+
+func MatchRangeByIndex(schema *database.Schema, indexNo int, cond any) (*database.RangeReq, bool) {
 	binop, ok := cond.(*ExprBinOp)
 	if ok && binop.op == database.OP_AND {
 		op1, cols1, cells1, ok := MatchCmp(binop.left)
-		if !ok || !database.IsPKeyPrefix(schema, cols1, cells1) {
+		if !ok || !database.IsPKeyPrefix(schema, indexNo, cols1, cells1) {
 			return nil, false
 		}
 
-		op2, cols2, cells2, ok := MatchCmp(binop.right)
-		if !ok || !database.IsPKeyPrefix(schema, cols2, cells2) {
+		op2, cols2, cells2, ok := MatchCmp(binop.left)
+		if !ok || !database.IsPKeyPrefix(schema, indexNo, cols2, cells2) {
 			return nil, false
 		}
 
-		if database.IsDescending(op1) == database.IsDescending(op2) {
+		if database.IsDescending(op1) != database.IsDescending(op2) {
 			return nil, false
 		}
 
@@ -120,10 +130,11 @@ func MatchRange(schema *database.Schema, cond any) (*database.RangeReq, bool) {
 			StopCmp:  op2,
 			Start:    cells1,
 			Stop:     cells2,
+			IndexNo:  indexNo,
 		}, true
 	} else if ok {
 		op1, cols1, cells1, ok := MatchCmp(cond)
-		if !ok || !database.IsPKeyPrefix(schema, cols1, cells1) {
+		if !ok || !database.IsPKeyPrefix(schema, indexNo, cols1, cells1) {
 			return nil, false
 		}
 
@@ -137,9 +148,9 @@ func MatchRange(schema *database.Schema, cond any) (*database.RangeReq, bool) {
 			StopCmp:  op2,
 			Start:    cells1,
 			Stop:     nil,
+			IndexNo:  indexNo,
 		}, true
 	}
-
 	return nil, false
 }
 

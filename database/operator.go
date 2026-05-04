@@ -24,6 +24,7 @@ type RangeReq struct {
 	StopCmp  ExprOp
 	Start    []Cell
 	Stop     []Cell
+	IndexNo  int
 }
 
 func IsDescending(op ExprOp) bool {

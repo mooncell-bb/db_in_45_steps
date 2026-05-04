@@ -138,10 +138,12 @@ func (db *DB) GetSchema(table string) (Schema, error) {
 }
 
 type RowIterator struct {
-	schema *Schema
-	iter   *storage.RangedKVIter
-	valid  bool
-	row    Row
+	db      *DB
+	schema  *Schema
+	indexNo int
+	iter    *storage.RangedKVIter
+	valid   bool
+	row     Row
 }
 
 func (db *DB) Seek(schema *Schema, row Row) (*RowIterator, error) {
@@ -162,27 +164,25 @@ func (db *DB) Seek(schema *Schema, row Row) (*RowIterator, error) {
 	})
 }
 
-func (db *DB) Range(schema *Schema, req *RangeReq) (*RowIterator, error) {
+func (db *DB) Range(schema *Schema, req *RangeReq) (out *RowIterator, err error) {
 	startDescending, stopDescending := IsDescending(req.StartCmp), IsDescending(req.StopCmp)
 	if startDescending == stopDescending {
 		panic("operator conflict")
 	}
 
-	start := EncodeKeyPrefix(schema, 0, req.Start, SuffixPositive(req.StartCmp))
-	stop := EncodeKeyPrefix(schema, 0, req.Stop, SuffixPositive(req.StopCmp))
+	start := EncodeKeyPrefix(schema, req.IndexNo, req.Start, SuffixPositive(req.StartCmp))
+	stop := EncodeKeyPrefix(schema, req.IndexNo, req.Stop, SuffixPositive(req.StopCmp))
 
-	iter, err := db.KV.Range(start, stop, startDescending)
-	if err != nil {
+	out = &RowIterator{db: db, schema: schema, indexNo: req.IndexNo, row: schema.NewRow()}
+	if out.iter, err = db.KV.Range(start, stop, startDescending); err != nil {
 		return nil, err
 	}
 
-	row := schema.NewRow()
-	valid, err := decodeKVIter(schema, iter, row)
-	if err != nil {
+	if out.valid, err = out.decodeKVIter(); err != nil {
 		return nil, err
 	}
-
-	return &RowIterator{schema: schema, iter: iter, valid: valid, row: row}, nil
+	
+	return out, nil
 }
 
 func (iter *RowIterator) Next() (err error) {
@@ -190,7 +190,7 @@ func (iter *RowIterator) Next() (err error) {
 		return err
 	}
 
-	iter.valid, err = decodeKVIter(iter.schema, iter.iter, iter.row)
+	iter.valid, err = iter.decodeKVIter()
 	return err
 }
 
@@ -202,19 +202,29 @@ func (iter *RowIterator) Row() Row {
 	return iter.row
 }
 
-func decodeKVIter(schema *Schema, iter *storage.RangedKVIter, row Row) (bool, error) {
-	if !iter.Valid() {
+func (iter *RowIterator) decodeKVIter() (bool, error) {
+	if !iter.iter.Valid() {
 		return false, nil
 	}
 
-	if err := row.DecodeKey(schema, 0, iter.Key()); err == ErrOutOfRange {
-		return false, nil
-	} else if err != nil {
+	if err := iter.row.DecodeKey(iter.schema, iter.indexNo, iter.iter.Key()); err != nil {
+		if err == ErrOutOfRange {
+			panic("iter out of range err")
+		}
 		return false, err
 	}
 
-	if err := row.DecodeVal(schema, iter.Val()); err != nil {
-		return false, err
+	if iter.indexNo > 0 {
+		ok, err := iter.db.Select(iter.schema, iter.row)
+		if err != nil {
+			return false, err
+		} else if !ok {
+			return false, errors.New("inconsistent index")
+		}
+	} else {
+		if err := iter.row.DecodeVal(iter.schema, iter.iter.Val()); err != nil {
+			return false, err
+		}
 	}
 
 	return true, nil

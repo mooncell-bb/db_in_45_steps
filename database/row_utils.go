@@ -90,13 +90,13 @@ func ExtractPKey(schema *Schema, pkey []NamedCell) (cells []Cell, ok bool) {
 	return cells, true
 }
 
-func IsPKeyPrefix(schema *Schema, cols []string, cells []Cell) bool {
-	if len(cols) != len(cells) || len(cols) > len(schema.Indices[0]) {
+func IsPKeyPrefix(schema *Schema, indexNo int, cols []string, cells []Cell) bool {
+	if len(cols) != len(cells) || len(cols) > len(schema.Cols) {
 		return false
 	}
 
 	for i := range cols {
-		col := schema.Cols[schema.Indices[0][i]]
+		col := schema.Cols[schema.Indices[indexNo][i]]
 
 		if col.Name != cols[i] || col.Type != cells[i].Type {
 			return false
