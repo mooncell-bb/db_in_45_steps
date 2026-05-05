@@ -192,6 +192,7 @@ func TestIterByPKey(t *testing.T) {
 		require.True(t, updated && err == nil)
 	}
 
+	tx := db.NewTX()
 	for i := int64(-1); i < N+1; i++ {
 		row := Row{
 			Cell{Type: TypeI64, I64: i},
@@ -199,7 +200,7 @@ func TestIterByPKey(t *testing.T) {
 		}
 
 		out := []int64{}
-		iter, err := db.Seek(schema, row)
+		iter, err := tx.Seek(schema, row)
 		for ; err == nil && iter.Valid(); err = iter.Next() {
 			out = append(out, iter.Row()[1].I64)
 		}
@@ -215,7 +216,7 @@ func TestIterByPKey(t *testing.T) {
 	}
 
 	drainIter := func(req *RangeReq) (out []int64) {
-		iter, err := db.Range(schema, req)
+		iter, err := tx.Range(schema, req)
 		for ; err == nil && iter.Valid(); err = iter.Next() {
 			out = append(out, iter.Row()[1].I64)
 		}
@@ -281,6 +282,7 @@ func TestIterByPKey(t *testing.T) {
 		}
 		testReq(req, i, -1, true)
 	}
+	tx.Abort()
 }
 
 func rangeQuery(sorted []int64, start int64, stop int64, desc bool) (out []int64) {
@@ -329,11 +331,14 @@ func TestIteratorValid(t *testing.T) {
 	}
 
 	// Test Valid() returns true for valid iterator
+	tx := db.NewTX()
+	defer tx.Abort()
+
 	seekRow := Row{
 		Cell{Type: TypeI64, I64: 1},
 		Cell{},
 	}
-	iter, err := db.Seek(schema, seekRow)
+	iter, err := tx.Seek(schema, seekRow)
 	require.Nil(t, err)
 	assert.True(t, iter.Valid())
 
@@ -385,12 +390,15 @@ func TestIteratorRow(t *testing.T) {
 	}
 
 	// Seek from the first row and verify Row() returns correct data
+	tx := db.NewTX()
+	defer tx.Abort()
+
 	seekRow := Row{
 		Cell{Type: TypeI64, I64: 100},
 		Cell{},
 		Cell{},
 	}
-	iter, err := db.Seek(schema, seekRow)
+	iter, err := tx.Seek(schema, seekRow)
 	require.Nil(t, err)
 
 	// Collect all rows via iterator
@@ -433,11 +441,14 @@ func TestIteratorNext(t *testing.T) {
 		require.True(t, updated && err == nil)
 	}
 
+	tx := db.NewTX()
+	defer tx.Abort()
+
 	seekRow := Row{
 		Cell{Type: TypeI64, I64: 0},
 		Cell{},
 	}
-	iter, err := db.Seek(schema, seekRow)
+	iter, err := tx.Seek(schema, seekRow)
 	require.Nil(t, err)
 
 	// Collect sequence of values using Next()

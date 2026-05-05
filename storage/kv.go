@@ -134,16 +134,10 @@ func (kv *KV) openSSTable() error {
 }
 
 func (kv *KV) Get(key []byte) (val []byte, ok bool, err error) {
-	iter, err := kv.Seek(key)
-	if err != nil {
-		return nil, false, err
-	}
+	tx := kv.NewTX()
+	defer tx.Abort()
 
-	if iter.Valid() && bytes.Equal(iter.Key(), key) {
-		return iter.Val(), true, nil
-	}
-
-	return nil, false, nil
+	return tx.Get(key)
 }
 
 func (kv *KV) Set(key []byte, val []byte) (updated bool, err error) {
@@ -151,62 +145,17 @@ func (kv *KV) Set(key []byte, val []byte) (updated bool, err error) {
 }
 
 func (kv *KV) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, err error) {
-	oldVal, exist, err := kv.Get(key)
-	if err != nil {
-		return false, err
-	}
+	tx := kv.NewTX()
+	updated, err = tx.SetEx(key, val, mode)
 
-	switch mode {
-	case ModeUpsert:
-		updated = !exist || !bytes.Equal(oldVal, val)
-	case ModeInsert:
-		updated = !exist
-	case ModeUpdate:
-		updated = exist && !bytes.Equal(oldVal, val)
-	default:
-		panic("unreachable")
-	}
-
-	if updated {
-		if err = kv.Log.Write(&Entry{key: key, val: val}); err != nil {
-			return false, err
-		}
-
-		_, err = kv.Mem.Set(key, val)
-		if err != nil {
-			panic("mem set error")
-		}
-	}
-
-	return updated, nil
+	return AbortOrCommit(tx, updated, err)
 }
 
 func (kv *KV) Del(key []byte) (deleted bool, err error) {
-	if _, exist, err := kv.Get(key); err != nil || !exist {
-		return false, err
-	}
+	tx := kv.NewTX()
+	deleted, err = tx.Del(key)
 
-	if err = kv.Log.Write(&Entry{key: key, deleted: true}); err != nil {
-		return false, err
-	}
-
-	_, err = kv.Mem.Del(key)
-
-	return true, nil
-}
-
-func (kv *KV) Seek(key []byte) (SortedKVIter, error) {
-	levels := MergedSortedKV{&kv.Mem}
-	for i := range kv.Main {
-		levels = append(levels, &kv.Main[i])
-	}
-
-	iter, err := levels.Seek(key)
-	if err != nil {
-		return nil, err
-	}
-
-	return FilterDeleted(iter)
+	return AbortOrCommit(tx, deleted, err)
 }
 
 func (kv *KV) Compact() error {
@@ -305,25 +254,53 @@ func (kv *KV) compactSSTable(level int) error {
 	return nil
 }
 
+func (kv *KV) applyTX(tx *KVTX) error {
+	if err := kv.updateLog(tx); err != nil {
+		return err
+	}
+
+	kv.updateMem(tx)
+	return nil
+}
+
+func (kv *KV) updateLog(tx *KVTX) error {
+	iter, err := tx.updates.Iter()
+	for ; err == nil && iter.Valid(); err = iter.Next() {
+		err = kv.Log.Write(
+			&Entry{
+				key:     iter.Key(),
+				val:     iter.Val(),
+				deleted: iter.Deleted(),
+			},
+		)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (kv *KV) updateMem(tx *KVTX) {
+	iter, err := tx.updates.Iter()
+	for ; err == nil && iter.Valid(); err = iter.Next() {
+		if iter.Deleted() {
+			_, err = kv.Mem.Del(iter.Key())
+		} else {
+			_, err = kv.Mem.Set(iter.Key(), iter.Val())
+		}
+	}
+
+	if err != nil {
+		panic("TX iter error")
+	}
+}
+
 type RangedKVIter struct {
 	iter SortedKVIter
 	stop []byte
 	desc bool
-}
-
-func (kv *KV) Range(start, stop []byte, desc bool) (*RangedKVIter, error) {
-	iter, err := kv.Seek(start)
-	if err != nil {
-		return nil, err
-	}
-
-	if desc && (!iter.Valid() || bytes.Compare(iter.Key(), start) > 0) {
-		if err = iter.Prev(); err != nil {
-			return nil, err
-		}
-	}
-
-	return &RangedKVIter{iter: iter, stop: stop, desc: desc}, nil
 }
 
 func (iter *RangedKVIter) Valid() bool {
@@ -368,3 +345,98 @@ func (iter *RangedKVIter) Next() error {
 		return iter.iter.Next()
 	}
 }
+
+type KVTX struct {
+	target  *KV
+	updates SortedArray
+	levels  MergedSortedKV
+}
+
+func (kv *KV) NewTX() *KVTX {
+	tx := &KVTX{target: kv}
+	tx.levels = MergedSortedKV{&tx.updates, &kv.Mem}
+
+	for i := range kv.Main {
+		tx.levels = append(tx.levels, &kv.Main[i])
+	}
+
+	return tx
+}
+
+func (tx *KVTX) Seek(key []byte) (SortedKVIter, error) {
+	iter, err := tx.levels.Seek(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return FilterDeleted(iter)
+}
+
+func (tx *KVTX) Get(key []byte) (val []byte, ok bool, err error) {
+	iter, err := tx.Seek(key)
+	ok = err == nil && iter.Valid() && bytes.Equal(iter.Key(), key)
+
+	if ok {
+		val = iter.Val()
+	}
+
+	return val, ok, err
+}
+
+func (tx *KVTX) Range(start, stop []byte, desc bool) (*RangedKVIter, error) {
+	iter, err := tx.Seek(start)
+	if err != nil {
+		return nil, err
+	}
+
+	if desc && (!iter.Valid() || bytes.Compare(iter.Key(), start) > 0) {
+		if err = iter.Prev(); err != nil {
+			return nil, err
+		}
+	}
+
+	return &RangedKVIter{iter: iter, stop: stop, desc: desc}, nil
+}
+
+func (tx *KVTX) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, err error) {
+	oldVal, exist, err := tx.Get(key)
+	if err != nil {
+		return false, err
+	}
+
+	switch mode {
+	case ModeUpsert:
+		updated = !exist || !bytes.Equal(oldVal, val)
+	case ModeInsert:
+		updated = !exist
+	case ModeUpdate:
+		updated = exist && !bytes.Equal(oldVal, val)
+	default:
+		panic("unreachable")
+	}
+
+	if updated {
+		_, err = tx.updates.Set(key, val)
+	}
+
+	return
+}
+
+func (tx *KVTX) Set(key []byte, val []byte) (updated bool, err error) {
+	return tx.SetEx(key, val, ModeUpsert)
+}
+
+func (tx *KVTX) Del(key []byte) (deleted bool, err error) {
+	if _, exist, err := tx.Get(key); err != nil || !exist {
+		return false, err
+	}
+
+	_, err = tx.updates.Del(key)
+	return true, err
+}
+
+func (tx *KVTX) Commit() error {
+	return tx.target.applyTX(tx)
+}
+
+func (tx *KVTX) Abort() {}

@@ -139,6 +139,7 @@ func TestIterByPKey(t *testing.T) {
 		require.True(t, updated && err == nil)
 	}
 
+	tx := db.NewTX()
 	for i := int64(-1); i < N+1; i++ {
 		row := database.Row{
 			database.Cell{Type: database.TypeI64, I64: i},
@@ -146,7 +147,7 @@ func TestIterByPKey(t *testing.T) {
 		}
 
 		out := []int64{}
-		iter, err := db.Seek(schema, row)
+		iter, err := tx.Seek(schema, row)
 		for ; err == nil && iter.Valid(); err = iter.Next() {
 			out = append(out, iter.Row()[1].I64)
 		}
@@ -162,7 +163,7 @@ func TestIterByPKey(t *testing.T) {
 	}
 
 	drainIter := func(req *database.RangeReq) (out []int64) {
-		iter, err := db.Range(schema, req)
+		iter, err := tx.Range(schema, req)
 		for ; err == nil && iter.Valid(); err = iter.Next() {
 			out = append(out, iter.Row()[1].I64)
 		}
@@ -228,6 +229,7 @@ func TestIterByPKey(t *testing.T) {
 		}
 		testReq(req, i, -1, true)
 	}
+	tx.Abort()
 }
 
 func rangeQuery(sorted []int64, start int64, stop int64, desc bool) (out []int64) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/mooncell-bb/db_in_45_steps/database"
+	"github.com/mooncell-bb/db_in_45_steps/storage"
 )
 
 type Exec struct {
@@ -22,7 +23,7 @@ func (exec *Exec) Open() error {
 }
 
 func (exec *Exec) Close() error {
-	return exec.DB.KV.Close()
+	return exec.DB.Close()
 }
 
 func (exec *Exec) ExecStmt(stmt any) (r SQLResult, err error) {
@@ -70,12 +71,10 @@ func (exec *Exec) execCreateTable(stmt *StmtCreatTable) (err error) {
 		return err
 	}
 
-	if _, err = exec.DB.KV.Set([]byte("@schema_"+stmt.table), val); err != nil {
-		return err
-	}
-
-	exec.DB.Tables[schema.Table] = schema
-	return nil
+	tx := exec.DB.NewTX()
+	_, err = tx.KV.Set([]byte("@schema_"+stmt.table), val)
+	_, err = storage.AbortOrCommit(tx, true, err)
+	return err
 }
 
 func (exec *Exec) execInsert(stmt *StmtInsert) (count int, err error) {
@@ -225,5 +224,10 @@ func (exec *Exec) execCond(schema *database.Schema, cond any) (*database.RowIter
 		return nil, err
 	}
 
-	return exec.DB.Range(schema, req)
+	tx := exec.DB.NewTX()
+	return tx.Range(schema, req)
+}
+
+type ExecTX struct {
+	DB *database.DBTX
 }

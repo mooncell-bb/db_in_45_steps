@@ -246,7 +246,8 @@ func TestKVSeek(t *testing.T) {
 	// err = kv.Compact()
 	// require.Nil(t, err)
 
-	iter, err := kv.Seek([]byte("a"))
+	tx := kv.NewTX()
+	iter, err := tx.Seek([]byte("a"))
 	require.Nil(t, err)
 	for i := range keys {
 		assert.True(t, iter.Valid())
@@ -268,17 +269,18 @@ func TestKVSeek(t *testing.T) {
 	}
 	assert.False(t, iter.Valid())
 
-	iter, err = kv.Seek([]byte("f"))
+	iter, err = tx.Seek([]byte("f"))
 	require.Nil(t, err)
 	assert.True(t, iter.Valid())
 	assert.Equal(t, []byte("g"), iter.Key())
 
-	iter, err = kv.Seek([]byte("g"))
+	iter, err = tx.Seek([]byte("g"))
 	require.Nil(t, err)
 	assert.True(t, iter.Valid())
 	assert.Equal(t, []byte("g"), iter.Key())
 
-	iter, err = kv.Seek([]byte("h"))
+	iter, err = tx.Seek([]byte("h"))
 	require.Nil(t, err)
 	assert.False(t, iter.Valid())
+	tx.Abort()
 }
